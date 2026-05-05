@@ -1,0 +1,96 @@
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "tools": [
+            {
+                "name": "core_order_query",
+                "description": "根据订单号查询海典核心订单表 corecmsorder，返回订单状态、支付、物流和患者信息等详情。场景：下单、查单、复购。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "orderId": {
+                            "type": "string",
+                            "description": "订单号，对应 corecmsorder.orderId"
+                        }
+                    },
+                    "required": [
+                        "orderId"
+                    ]
+                }
+            },
+            {
+                "name": "core_insurance_query",
+                "description": "根据患者标识（userId、手机号或身份证）查询海典同步数据源 corecmsusership 表中的医保/患者档案信息。场景：下单前查患者医保信息。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "userId": {
+                            "type": "integer",
+                            "description": "海典用户ID，对应 corecmsusership.userId"
+                        },
+                        "mobile": {
+                            "type": "string",
+                            "description": "患者手机号，对应 corecmsusership.mobile"
+                        },
+                        "idCard": {
+                            "type": "string",
+                            "description": "身份证号，对应 corecmsusership.idCard 或 bmrSfz"
+                        }
+                    },
+                    "required": [],
+                    "description": "userId、mobile、idCard 至少提供一个；查询优先级建议：userId > idCard > mobile"
+                }
+            },
+            {
+                "name": "core_drug_query",
+                "description": "根据药品名称、拼音或条码查询海典同步数据源 t_ware_base 表中的药品基础信息列表。场景：开方、配药、复购推荐。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "keyword": {
+                            "type": "string",
+                            "description": "关键字，支持药品名称(WARENAME)或拼音码(WAREABC)模糊匹配。"
+                        },
+                        "barCode": {
+                            "type": "string",
+                            "description": "药品条码，对应 t_ware_base.BARCODE，支持精准或包含匹配。"
+                        }
+                    },
+                    "required": [],
+                    "description": "keyword、barCode 至少提供一个；当同时提供时优先使用 barCode 精准查询。"
+                }
+            },
+            {
+                "name": "core_visit_strategy_query",
+                "description": "回访策略查询接口。当前暂未接入实际回访策略数据，固定返回“暂无数据支持”。后续有数据后可平滑升级。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "businessId": {
+                            "type": "string",
+                            "description": "业务标识，例如订单号、患者ID等，可用于后续接入真实回访策略时做精确匹配。当前可为空。"
+                        }
+                    },
+                    "required": [],
+                    "description": "目前 businessId 为可选，仅作为预留扩展字段。"
+                }
+            },
+            {
+                "name": "core_order_create",
+                "description": "下单操作类接口占位实现。当前阶段不实际调用业务下单接口，仅生成模拟订单信息返回，便于大模型联调与流程打通。",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "requestJson": {
+                            "type": "string",
+                            "description": "业务侧下单请求的 JSON 字符串，当前仅用于回显与排查。"
+                        }
+                    },
+                    "required": [],
+                    "description": "当前阶段 requestJson 为可选，后续可根据真实下单接口参数扩展。"
+                }
+            }
+        ]
+    }
+}

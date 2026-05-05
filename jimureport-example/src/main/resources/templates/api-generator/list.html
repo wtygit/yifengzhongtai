@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API生成器 - 列表</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.0/dist/css/bootstrap.min.css">
+    <!-- iView CSS for icons -->
+    <link rel="stylesheet" type="text/css" href="/jmreport/desreport_/cdn/iview/iview.css">
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@0.19.2/dist/axios.min.js"></script>
+</head>
+<body>
+    <div class="container-fluid" id="app">
+        <nav class="navbar navbar-expand-lg" style="background-color: #1890ff; color: white;">
+            <a class="navbar-brand" href="#" style="color: white; font-size: 16px; font-weight: bold; padding-left: 20px;">一丰中台</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav mr-auto">
+                    <li class="nav-item active">
+                        <a class="nav-link" href="/api-generator/list" style="color: white;">API列表</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api-generator/design" style="color: white;">新建API</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/table-association" style="color: white;">多表关联建模</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/mcp/order-audit" style="color: white;">MCP订单审核</a>
+                    </li>
+                </ul>
+
+                <a class="jimu-logout jimu-switch mr-3" href="/jmreport/list" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                    <img src="/jmreport/desreport_/images/jimu-drag.svg" style="width: 20px; height: 20px; margin-right: 5px;"></img>
+                    进入报表工作台
+                </a>
+                <a class="jimu-logout" href="/logout" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                    <i class="ivu-icon ivu-icon-ios-power" style="font-size: 20px; margin-right: 5px;"></i>
+                    <span>退出登录</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="row">
+                            <div class="col-md-6">
+                                API列表
+                            </div>
+                            <div class="col-md-6 text-right">
+                                <a href="/api-generator/design" class="btn btn-primary">新建API</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- 查询表单 -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" v-model="searchParams.apiName" placeholder="API名称模糊查询">
+                            </div>
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" v-model="searchParams.apiPath" placeholder="API路径模糊查询">
+                            </div>
+                            <div class="col-md-2">
+                                <button @click="loadApiList" class="btn btn-primary btn-block">查询</button>
+                            </div>
+                            <div class="col-md-2">
+                                <button @click="resetSearch" class="btn btn-secondary btn-block">重置</button>
+                            </div>
+                        </div>
+                        
+                        <table class="table table-striped table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>API类型</th>
+                                    <th>API名称</th>
+                                    <th>API路径</th>
+                                    <th>描述</th>
+                                    <th>是否分页</th>
+                                    <th>默认页大小</th>
+                                    <th>状态</th>
+                                    <th>创建人</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="api in apiList" :key="api.id">
+                                    <td>
+                                        <span v-if="api.apiType === 'sql'" class="badge badge-info">SQL类型</span>
+                                        <span v-else class="badge badge-primary">表类型</span>
+                                    </td>
+                                    <td>{{api.apiName}}</td>
+                                    <td>{{api.apiPath}}</td>
+                                    <td>{{api.description}}</td>
+                                    <td>
+                                        <span v-if="api.needPagination" class="badge badge-success">是</span>
+                                        <span v-else class="badge badge-secondary">否</span>
+                                    </td>
+                                    <td>{{api.needPagination ? (api.pageSize || 20) : '-'}}</td>
+                                    <td>
+                                        <span v-if="api.status" class="badge badge-success">启用</span>
+                                        <span v-else class="badge badge-danger">禁用</span>
+                                    </td>
+                                    <td>{{api.createBy}}</td>
+                                    <td>{{formatDateTime(api.createTime)}}</td>
+                                    <td>
+                                        <a :href="api.apiType === 'sql' ? '/api-generator/sql-design?apiId=' + api.id : '/api-generator/design?apiId=' + api.id" class="btn btn-sm btn-info">编辑</a>
+                                        <button @click="deleteApi(api.id)" class="btn btn-sm btn-danger ml-2">删除</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                apiList: [],
+                searchParams: {
+                    apiName: '',
+                    apiPath: ''
+                }
+            },
+            mounted() {
+                this.loadApiList();
+            },
+            methods: {
+                loadApiList() {
+                    // 构建查询参数
+                    const params = new URLSearchParams();
+                    if (this.searchParams.apiName) {
+                        params.append('apiName', this.searchParams.apiName);
+                    }
+                    if (this.searchParams.apiPath) {
+                        params.append('apiPath', this.searchParams.apiPath);
+                    }
+                    
+                    axios.get('/api-generator/api/list?' + params.toString())
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.apiList = response.data.data || [];
+                                console.log('API列表加载成功，数量：', this.apiList.length);
+                            } else {
+                                alert('加载API列表失败：' + (response.data.msg || '未知错误'));
+                                this.apiList = [];
+                            }
+                        })
+                        .catch(error => {
+                            console.error('加载API列表失败：', error);
+                            alert('加载API列表失败：' + error.message);
+                            this.apiList = [];
+                        });
+                },
+                resetSearch() {
+                    this.searchParams = {
+                        apiName: '',
+                        apiPath: ''
+                    };
+                    this.loadApiList();
+                },
+                deleteApi(apiId) {
+                    if (confirm('确定要删除这个API吗？')) {
+                        axios.delete('/api-generator/api/delete/' + apiId)
+                            .then(response => {
+                                if (response.data.code === 200) {
+                                    alert('删除成功');
+                                    this.loadApiList();
+                                } else {
+                                    alert('删除失败：' + (response.data.msg || '未知错误'));
+                                }
+                            })
+                            .catch(error => {
+                                console.error('删除API失败：', error);
+                                alert('删除失败：' + error.message);
+                            });
+                    }
+                },
+                formatDateTime(dateTimeStr) {
+                    if (!dateTimeStr) {
+                        return '-';
+                    }
+                    // 处理ISO 8601格式：2026-01-19T09:42:42.000+00:00 或 2026-01-19T09:42:42.000Z
+                    // 转换为：2026-01-19 09:42:42
+                    try {
+                        // 如果已经是 yyyy-MM-dd HH:mm:ss 格式，直接返回
+                        if (dateTimeStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+                            return dateTimeStr;
+                        }
+                        
+                        // 如果包含T，说明是ISO格式
+                        if (dateTimeStr.includes('T')) {
+                            // 提取日期和时间部分
+                            const parts = dateTimeStr.split('T');
+                            if (parts.length === 2) {
+                                const datePart = parts[0]; // yyyy-MM-dd
+                                let timePart = parts[1];
+                                // 去掉毫秒和时区信息
+                                timePart = timePart.split('.')[0]; // 去掉毫秒
+                                timePart = timePart.split('+')[0]; // 去掉 +00:00
+                                timePart = timePart.split('-')[0]; // 去掉 -00:00
+                                timePart = timePart.split('Z')[0]; // 去掉 Z
+                                // 确保时间部分是 HH:mm:ss 格式
+                                if (timePart.match(/^\d{2}:\d{2}:\d{2}$/)) {
+                                    return datePart + ' ' + timePart;
+                                } else if (timePart.match(/^\d{2}:\d{2}$/)) {
+                                    return datePart + ' ' + timePart + ':00';
+                                }
+                            }
+                        }
+                        
+                        // 尝试解析为Date对象并格式化
+                        const date = new Date(dateTimeStr);
+                        if (!isNaN(date.getTime())) {
+                            const year = date.getFullYear();
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const day = String(date.getDate()).padStart(2, '0');
+                            const hours = String(date.getHours()).padStart(2, '0');
+                            const minutes = String(date.getMinutes()).padStart(2, '0');
+                            const seconds = String(date.getSeconds()).padStart(2, '0');
+                            return year + '-' + month + '-' + day + ' ' + hours + ':' + minutes + ':' + seconds;
+                        }
+                    } catch (e) {
+                        console.error('格式化时间失败：', e, dateTimeStr);
+                    }
+                    // 如果解析失败，返回原始值
+                    return dateTimeStr;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

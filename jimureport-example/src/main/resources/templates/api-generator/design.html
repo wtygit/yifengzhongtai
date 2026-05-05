@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API生成器 - 设计</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.0/dist/css/bootstrap.min.css">
+    <!-- iView CSS for icons -->
+    <link rel="stylesheet" type="text/css" href="/jmreport/desreport_/cdn/iview/iview.css">
+    <style>
+        .sql-editor {
+            font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@0.19.2/dist/axios.min.js"></script>
+</head>
+<body>
+    <div class="container-fluid" id="app">
+        <input type="hidden" id="apiId" th:value="${apiId}">
+        <nav class="navbar navbar-expand-lg" style="background-color: #1890ff; color: white;">
+            <a class="navbar-brand" href="#" style="color: white;">API生成器</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav mr-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api-generator/list" style="color: white;">API列表</a>
+                    </li>
+                    <li th:if="${apiId == null}" class="nav-item active">
+                        <a class="nav-link" href="/api-generator/design" style="color: white;">新建API</a>
+                    </li>
+                    <li th:if="${apiId != null}" class="nav-item active">
+                        <a class="nav-link" href="#" style="color: white;">编辑API</a>
+                    </li>
+                </ul>
+
+                <a class="jimu-logout jimu-switch mr-3" href="/jmreport/list" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                    <img src="/jmreport/desreport_/images/jimu-drag.svg" style="width: 20px; height: 20px; margin-right: 5px;"></img>
+                    进入报表工作台
+                </a>
+                <a class="jimu-logout" href="/logout" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                    <i class="ivu-icon ivu-icon-ios-power" style="font-size: 20px; margin-right: 5px;"></i>
+                    <span>退出登录</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>API设计</h5>
+                            </div>
+                            <div class="col-md-6 text-right">
+                                <button @click="saveApi" class="btn btn-primary">保存API</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- API基本信息 -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                API基本信息
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group row">
+                                    <label for="apiName" class="col-sm-2 col-form-label">API名称</label>
+                                    <div class="col-sm-10">
+                                        <input type="text" class="form-control" id="apiName" v-model="apiInfo.apiName" placeholder="请输入API名称">
+                                    </div>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="apiPath" class="col-sm-2 col-form-label">API路径</label>
+                                    <div class="col-sm-10">
+                                        <input type="text" class="form-control" id="apiPath" v-model="apiInfo.apiPath" placeholder="请输入API路径，如：/api/user/list">
+                                    </div>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="apiType" class="col-sm-2 col-form-label">API类型</label>
+                                    <div class="col-sm-10">
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="radio" id="apiTypeTable" v-model="apiInfo.apiType" value="table">
+                                            <label class="form-check-label" for="apiTypeTable">表类型（选表+选字段）</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="radio" id="apiTypeSql" v-model="apiInfo.apiType" value="sql">
+                                            <label class="form-check-label" for="apiTypeSql">SQL类型（写SQL+选数据源）</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="description" class="col-sm-2 col-form-label">描述</label>
+                                    <div class="col-sm-10">
+                                        <textarea class="form-control" id="description" v-model="apiInfo.description" rows="3" placeholder="请输入API描述"></textarea>
+                                    </div>
+                                </div>
+                                <div class="form-group row" v-if="apiInfo.apiType === 'table'">
+                                    <label for="needPagination" class="col-sm-2 col-form-label">是否分页</label>
+                                    <div class="col-sm-10">
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="radio" id="needPaginationYes" v-model="apiInfo.needPagination" :value="1">
+                                            <label class="form-check-label" for="needPaginationYes">是</label>
+                                        </div>
+                                        <div class="form-check form-check-inline">
+                                            <input class="form-check-input" type="radio" id="needPaginationNo" v-model="apiInfo.needPagination" :value="0">
+                                            <label class="form-check-label" for="needPaginationNo">否</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-group row" v-if="apiInfo.apiType === 'table' && apiInfo.needPagination == 1">
+                                    <label for="pageSize" class="col-sm-2 col-form-label">默认每页记录数</label>
+                                    <div class="col-sm-2">
+                                        <input type="number" class="form-control" id="pageSize" v-model="apiInfo.pageSize" min="1" max="100" placeholder="20">
+                                    </div>
+                                    <div class="col-sm-8 text-muted">
+                                        范围：1-100，默认值：20
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 数据库表选择（仅表类型显示） -->
+                        <div class="card mb-4" v-if="apiInfo.apiType === 'table'">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>数据库表选择</span>
+                                <button type="button" class="btn btn-sm btn-outline-light" @click="goToTaSqlApi">
+                                    使用多表关联数据集（SQL API）
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info" role="alert">
+                                    <strong>提示：</strong>
+                                    <ul>
+                                        <li>可以选择不同数据库中的表进行联合查询</li>
+                                        <li>跨数据库查询会自动在后端进行数据处理，而非直接使用SQL JOIN</li>
+                                        <li>请确保表之间有正确的关联字段（如ID字段）</li>
+                                        <li>跨数据库查询的性能可能会低于同一数据库查询</li>
+                                    </ul>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="form-group">
+                                            <label for="databaseName">选择数据库</label>
+                                            <select class="form-control" id="databaseName" v-model="selectedDatabase" @change="loadTableList">
+                                                <option value="">-- 请选择数据库 --</option>
+                                                <option v-for="database in databaseList" :key="database.databaseName" :value="database.databaseName">{{database.databaseName}}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-group">
+                                            <label for="tableName">选择表</label>
+                                            <select class="form-control" id="tableName" v-model="selectedTable" @change="addTable" :disabled="!selectedDatabase">
+                                                <option value="">-- 请选择表 --</option>
+                                                <option v-for="table in tableList" :key="table.tableName" :value="table.tableName">{{table.tableName}}</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4">
+                                    <h6>已选择的表</h6>
+                                    <div class="list-group">
+                                        <div v-for="(table, index) in apiTables" :key="table.id" class="list-group-item">
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <strong>{{table.tableName}}</strong>
+                                                    <span v-if="table.alias" class="text-muted"> ({{table.alias}})</span>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <input type="text" class="form-control form-control-sm" v-model="table.alias" placeholder="表别名">
+                                                </div>
+                                                <div class="col-md-4 text-right">
+                                                    <button @click="removeTable(index)" class="btn btn-sm btn-danger">删除</button>
+                                                </div>
+                                            </div>
+                                            
+                                            <!-- 表关联条件 -->
+                                            <div v-if="index > 0" class="mt-3">
+                                                <div class="row">
+                                                    <div class="col-md-3">
+                                                        <select class="form-control form-control-sm" v-model="table.joinType">
+                                                            <option value="inner join">Inner Join</option>
+                                                            <option value="left join">Left Join</option>
+                                                            <option value="right join">Right Join</option>
+                                                            <option value="full join">Full Join</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-9">
+                                                        <input type="text" class="form-control form-control-sm" v-model="table.joinCondition" placeholder="关联条件，如：主表别名.id = 子表别名.id">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 返回字段选择 -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                返回字段选择
+                            </div>
+                            <div class="card-body">
+                                <div v-if="apiTables.length === 0" class="alert alert-warning">请先选择数据库表</div>
+                                <div v-else>
+                                    <div v-for="table in apiTables" :key="table.id" class="mb-4">
+                                        <h6>{{table.tableName}} <span v-if="table.alias" class="text-muted">({{table.alias}})</span> 的字段</h6>
+                                        <div class="table-responsive">
+                                            <table class="table table-striped table-bordered">
+                                                <thead>
+                                                    <tr>
+                                                        <th><input type="checkbox" v-model="selectAllFields[table.databaseName + '.' + table.tableName]" @change="toggleAllFields(table.tableName)"></th>
+                                                        <th>字段名</th>
+                                                        <th>数据类型</th>
+                                                        <th>字段别名</th>
+                                                        <th>是否主键</th>
+                                                        <th>描述</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr v-for="field in table.fields" :key="field.fieldName">
+                                                        <td><input type="checkbox" v-model="field.checked"></td>
+                                                        <td>{{field.fieldName}}</td>
+                                                        <td>{{field.dataType}}</td>
+                                                        <td><input type="text" class="form-control form-control-sm" v-model="field.alias"></td>
+                                                        <td>{{field.isPrimary ? '是' : '否'}}</td>
+                                                        <td>{{field.description}}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SQL配置：仅 SQL 类型时显示 -->
+                        <div class="card mb-4" v-if="apiInfo.apiType === 'sql'">
+                            <div class="card-header">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        SQL配置
+                                    </div>
+                                    <div class="col-md-6 text-right">
+                                        <button type="button" @click="testSql" class="btn btn-info">测试SQL</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info" role="alert">
+                                    <strong>提示：</strong>
+                                    <ul>
+                                        <li>选择数据源后编写SQL，调用API时会执行此SQL</li>
+                                        <li>支持 SELECT 查询及 INSERT/UPDATE/DELETE，参数使用 #{参数名}，如：WHERE id = #{id}</li>
+                                    </ul>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="sqlDatabaseName" class="col-sm-2 col-form-label">选择数据源</label>
+                                    <div class="col-sm-10">
+                                        <select class="form-control" id="sqlDatabaseName" v-model="apiInfo.sqlDatabaseName">
+                                            <option value="">-- 默认数据源 --</option>
+                                            <option v-for="database in databaseList" :key="database.databaseName" :value="database.databaseName">{{database.databaseName}}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="sqlContent" class="col-sm-2 col-form-label">SQL语句</label>
+                                    <div class="col-sm-10">
+                                        <textarea class="form-control sql-editor" id="sqlContent" v-model="apiInfo.sqlContent" rows="10" placeholder="请输入SQL，例如：&#10;SELECT * FROM user WHERE status = #{status}&#10;参数使用 #{参数名} 格式"></textarea>
+                                        <small class="form-text text-muted">必填。调用API时会执行此SQL。</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SQL测试结果：仅 SQL 类型且点击测试后显示 -->
+                        <div class="card mb-4" v-if="apiInfo.apiType === 'sql' && testResult">
+                            <div class="card-header">SQL测试结果</div>
+                            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                                <div v-if="testResult.code === 200" class="alert alert-success">
+                                    <strong>执行成功！</strong>
+                                    <div v-if="testResult.result && testResult.result.type === 'query'">
+                                        <p>查询类型，返回 {{testResult.result.data ? testResult.result.data.length : 0}} 条记录</p>
+                                        <table class="table table-bordered table-sm" v-if="testResult.result.data && testResult.result.data.length > 0">
+                                            <thead>
+                                                <tr>
+                                                    <th v-for="key in Object.keys(testResult.result.data[0])" :key="key">{{key}}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(row, index) in testResult.result.data" :key="index">
+                                                    <td v-for="key in Object.keys(testResult.result.data[0])" :key="key">{{row[key]}}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div v-else-if="testResult.result && testResult.result.type === 'update'">
+                                        <p>更新类型，影响 {{testResult.result.updateCount}} 行</p>
+                                    </div>
+                                    <div v-else>
+                                        <p>执行成功</p>
+                                    </div>
+                                </div>
+                                <div v-else class="alert alert-danger">
+                                    <strong>执行失败：</strong>{{testResult.msg}}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                apiId: '',
+                apiInfo: {
+                    apiName: '',
+                    apiPath: '',
+                    description: '',
+                    apiType: 'table',
+                    needPagination: 0,
+                    pageSize: 20,
+                    sqlContent: '',
+                    sqlDatabaseName: ''
+                },
+                databaseList: [],
+                selectedDatabase: '',
+                tableList: [],
+                selectedTable: '',
+                apiTables: [],
+                selectAllFields: {},
+                testResult: null
+            },
+            mounted() {
+                // 从隐藏input中获取apiId
+                this.apiId = document.getElementById('apiId').value;
+                this.loadDatabaseList();
+                if (this.apiId) {
+                    this.loadApiInfo();
+                }
+            },
+            methods: {
+                loadDatabaseList() {
+                    axios.get('/api-generator/database/list')
+                        .then(response => {
+                            this.databaseList = response.data.data;
+                        })
+                        .catch(error => {
+                            alert('加载数据库列表失败：' + error.message);
+                        });
+                },
+                loadTableList() {
+                    if (!this.selectedDatabase) {
+                        this.tableList = [];
+                        return;
+                    }
+                    axios.get('/api-generator/table/list-by-database?databaseName=' + this.selectedDatabase)
+                        .then(response => {
+                            this.tableList = response.data.data;
+                        })
+                        .catch(error => {
+                            alert('加载表列表失败：' + error.message);
+                        });
+                },
+                loadApiInfo() {
+            console.log('开始加载API信息，apiId:', this.apiId);
+            axios.get('/api-generator/api/' + this.apiId)
+                .then(response => {
+                    console.log('API信息加载成功:', response.data);
+                    const data = response.data.data || {};
+                    this.apiInfo = data.apiInfo || {
+                        apiName: '',
+                        apiPath: '',
+                        description: '',
+                        apiType: 'table',
+                        needPagination: 0,
+                        pageSize: 20,
+                        sqlContent: '',
+                        sqlDatabaseName: ''
+                    };
+                    if (!this.apiInfo.apiType) this.apiInfo.apiType = 'table';
+                    if (this.apiInfo.sqlDatabaseName === undefined) this.apiInfo.sqlDatabaseName = '';
+                    if (this.apiInfo.needPagination === undefined) this.apiInfo.needPagination = 0;
+                    if (this.apiInfo.pageSize === undefined) this.apiInfo.pageSize = 20;
+                    this.apiTables = data.apiTables || [];
+                    const savedFields = data.apiFields || [];
+                    
+                    console.log('加载到的表信息:', this.apiTables);
+                    console.log('加载到的字段信息:', savedFields);
+                    
+                    // 为每个表加载字段信息并设置选中状态和别名
+                    this.apiTables.forEach((table, index) => {
+                        console.log('处理表:', table.databaseName, table.tableName, table);
+                        
+                        // 如果表没有别名，生成默认别名：表名的首字母小写
+                        if (!table.alias || table.alias.trim() === '') {
+                            let defaultAlias = table.tableName;
+                            if (defaultAlias.length > 0) {
+                                defaultAlias = defaultAlias.charAt(0).toLowerCase() + defaultAlias.slice(1);
+                            }
+                            table.alias = defaultAlias;
+                            console.log('为表', table.tableName, '生成默认别名:', table.alias);
+                        }
+                        
+                        // 如果是第一个表之后的表，并且没有JOIN条件，生成默认JOIN条件
+                        if (index > 0 && (!table.joinCondition || table.joinCondition.trim() === '')) {
+                            // 生成与第一张表的主键关联
+                            const firstTable = this.apiTables[0];
+                            const firstTableAlias = firstTable.alias || (firstTable.tableName.charAt(0).toLowerCase() + firstTable.tableName.slice(1));
+                            // 假设表的主键字段名为id
+                            table.joinCondition = `${firstTableAlias}.id = ${table.alias}.id`;
+                            console.log('为表', table.tableName, '生成默认JOIN条件:', table.joinCondition);
+                        }
+                        // 获取表的字段信息
+                        axios.get('/api-generator/table/fields?databaseName=' + (table.databaseName || '') + '&tableName=' + table.tableName)
+                            .then(response => {
+                                console.log('加载表字段数据:', table.tableName, response.data.data);
+                                const fields = response.data.data.map(field => ({
+                                    fieldName: field.fieldName,
+                                    dataType: field.dataType,
+                                    alias: '',
+                                    isPrimary: field.isPrimary,
+                                    description: field.description,
+                                    checked: false
+                                }));
+                                
+                                // 设置原有字段的选中状态和别名
+                                fields.forEach(field => {
+                                    const savedField = savedFields.find(f => 
+                                        f.databaseName === table.databaseName &&
+                                        f.tableName === table.tableName && 
+                                        f.fieldName === field.fieldName
+                                    );
+                                    if (savedField) {
+                                        field.checked = true;
+                                        field.alias = savedField.alias;
+                                        console.log('设置字段选中状态:', field.fieldName, '选中:', field.checked, '别名:', field.alias);
+                                    }
+                                });
+                                
+                                table.fields = fields;
+                                console.log('表字段设置完成:', table.tableName, table.fields);
+                                // 初始化全选状态
+                                this.$nextTick(() => {
+                                    const key = `${table.databaseName}.${table.tableName}`;
+                                    this.selectAllFields[key] = fields.every(field => field.checked);
+                                });
+                            })
+                            .catch(error => {
+                                console.error('加载表字段失败:', error.message);
+                                alert('加载表字段失败：' + error.message);
+                            });
+                    });
+                })
+                .catch(error => {
+                    console.error('加载API信息失败:', error.message);
+                    alert('加载API信息失败：' + error.message);
+                });
+        },
+                addTable() {
+                    if (!this.selectedDatabase || !this.selectedTable) return;
+                    
+                    // 检查是否已选择该表（考虑数据库名）
+                    const exists = this.apiTables.some(table => 
+                        table.databaseName === this.selectedDatabase && 
+                        table.tableName === this.selectedTable
+                    );
+                    if (exists) {
+                        alert('该表已被选择');
+                        return;
+                    }
+                    
+                    // 获取表的字段信息
+                    axios.get('/api-generator/table/fields?databaseName=' + this.selectedDatabase + '&tableName=' + this.selectedTable)
+                        .then(response => {
+                            const fields = response.data.data.map(field => ({
+                                fieldName: field.fieldName,
+                                dataType: field.dataType,
+                                alias: '',
+                                isPrimary: field.isPrimary,
+                                description: field.description,
+                                checked: false
+                            }));
+                            
+                            // 生成默认别名：表名的首字母小写
+                            let defaultAlias = this.selectedTable;
+                            if (defaultAlias.length > 0) {
+                                defaultAlias = defaultAlias.charAt(0).toLowerCase() + defaultAlias.slice(1);
+                            }
+                            
+                            // 生成默认JOIN条件
+                            let defaultJoinCondition = '';
+                            if (this.apiTables.length > 0) {
+                                // 如果已经有表，生成与第一张表的主键关联
+                                const firstTable = this.apiTables[0];
+                                const firstTableAlias = firstTable.alias || (firstTable.tableName.charAt(0).toLowerCase() + firstTable.tableName.slice(1));
+                                // 假设表的主键字段名为id
+                                defaultJoinCondition = `${firstTableAlias}.id = ${defaultAlias}.id`;
+                            }
+                            
+                            this.apiTables.push({
+                                id: Date.now().toString(),
+                                databaseName: this.selectedDatabase,
+                                tableName: this.selectedTable,
+                                alias: defaultAlias,
+                                joinType: 'inner join',
+                                joinCondition: defaultJoinCondition,
+                                fields: fields
+                            });
+                            
+                            this.selectedTable = '';
+                        })
+                        .catch(error => {
+                            alert('加载表字段失败：' + error.message);
+                        });
+                },
+                removeTable(index) {
+                    this.apiTables.splice(index, 1);
+                },
+                goToTaSqlApi() {
+                    window.location.href = '/api-generator/sql-design';
+                },
+                testSql() {
+                    if (!this.apiInfo.sqlContent || !this.apiInfo.sqlContent.trim()) {
+                        alert('请输入SQL语句');
+                        return;
+                    }
+                    var payload = {
+                        databaseName: this.apiInfo.sqlDatabaseName || '',
+                        sql: this.apiInfo.sqlContent
+                    };
+                    var self = this;
+                    axios.post('/api-generator/sql/execute', payload)
+                        .then(function(response) {
+                            self.testResult = response.data;
+                        })
+                        .catch(function(error) {
+                            self.testResult = {
+                                code: 500,
+                                msg: error.response && error.response.data ? error.response.data.msg : error.message
+                            };
+                        });
+                },
+                toggleAllFields(tableName) {
+                    // 由于可能有不同数据库中的同名表，需要找到具体的表
+                    const table = this.apiTables.find(t => t.tableName === tableName);
+                    if (table) {
+                        const key = `${table.databaseName}.${tableName}`;
+                        const isChecked = this.selectAllFields[key];
+                        table.fields.forEach(field => {
+                            field.checked = isChecked;
+                        });
+                    }
+                },
+                saveApi() {
+                    // 基本信息必填
+                    if (!this.apiInfo.apiName || !this.apiInfo.apiName.trim()) {
+                        alert('请输入API名称');
+                        return;
+                    }
+                    if (!this.apiInfo.apiPath || !this.apiInfo.apiPath.trim()) {
+                        alert('请输入API路径');
+                        return;
+                    }
+                    
+                    // 第二种创建方式：选了数据源、写了 SQL、没选表 -> 按 SQL 类型保存（不要求选表/选字段）
+                    const hasSqlContent = this.apiInfo.sqlContent && this.apiInfo.sqlContent.trim();
+                    const noTableSelected = !this.apiTables || this.apiTables.length === 0;
+                    const isSqlType = this.apiInfo.apiType === 'sql' || (hasSqlContent && noTableSelected);
+                    
+                    if (isSqlType) {
+                        // SQL类型：只需选择数据源（可选）和填写SQL，不需要选表、选字段
+                        if (!this.apiInfo.sqlContent || !this.apiInfo.sqlContent.trim()) {
+                            alert('请输入SQL语句');
+                            return;
+                        }
+                        const saveData = {
+                            apiInfo: {
+                                ...this.apiInfo,
+                                apiType: 'sql',
+                                status: 1,
+                                needPagination: 0,
+                                pageSize: 20
+                            },
+                            apiTables: [],
+                            apiFields: []
+                        };
+                        this.doSave(saveData);
+                        return;
+                    }
+                    
+                    // 表类型：必须至少有一个表和字段
+                    if (this.apiTables.length === 0) {
+                        alert('请至少选择一个数据库表');
+                        return;
+                    }
+                    const selectedFields = [];
+                    this.apiTables.forEach(table => {
+                        if (table.fields && table.fields.length > 0) {
+                            table.fields.forEach(field => {
+                                if (field.checked) {
+                                    selectedFields.push({
+                                        databaseName: table.databaseName,
+                                        tableName: table.tableName,
+                                        fieldName: field.fieldName,
+                                        alias: field.alias,
+                                        dataType: field.dataType,
+                                        isPrimary: field.isPrimary,
+                                        description: field.description
+                                    });
+                                }
+                            });
+                        }
+                    });
+                    if (selectedFields.length === 0) {
+                        alert('请至少选择一个字段');
+                        return;
+                    }
+                    const apiTablesToSave = this.apiTables.map(table => ({
+                        id: table.id,
+                        databaseName: table.databaseName,
+                        tableName: table.tableName,
+                        alias: table.alias,
+                        joinType: table.joinType,
+                        joinCondition: table.joinCondition
+                    }));
+                    const saveData = {
+                        apiInfo: {
+                            ...this.apiInfo,
+                            apiType: 'table'
+                        },
+                        apiTables: apiTablesToSave,
+                        apiFields: selectedFields
+                    };
+                    this.doSave(saveData);
+                },
+                doSave(saveData) {
+                    
+                    console.log('保存API数据:', saveData);
+                    
+                    // 保存API
+                    axios.post('/api-generator/api/save', saveData)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                alert('保存成功');
+                                window.location.href = '/api-generator/list';
+                            } else {
+                                alert('保存失败：' + response.data.msg);
+                            }
+                        })
+                        .catch(error => {
+                            alert('保存失败：' + error.message);
+                        });
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,638 @@
+###############################################################################
+# 海典 MCP 接口对接与测试文档
+# 用途：自测 + 交付客户对接。多数为 POST（JSON）；群联调章节 〇 含 GET 查询。
+# 环境：将 @BASE 改为实际服务地址，本地测试可用 http://localhost:8085
+###############################################################################
+
+@BASE = https://yfzt.antissoft.com
+@ACCESS_TOKEN = mcp-yifeng-fixed-bearer-7Kp9mN2xQ4vL8wR3sT6jH1gF5dC0bA
+
+###############################################################################
+# 0、先获取 OAuth Token（MCP接口）
+# 说明：
+# 1) 此接口无需 Bearer；
+# 2) 复制响应里的 access_token，填到 @ACCESS_TOKEN；
+# 3) 后续受保护接口统一加：Authorization: Bearer {{ACCESS_TOKEN}}
+###############################################################################
+
+### 0-0 获取Token（MCP风格）
+POST {{BASE}}/mcp/core_oauth_token
+Content-Type: application/json
+
+{
+  "grant_type": "client_credentials",
+  "client_id": "mcp-client",
+  "client_secret": "change-me-please"
+}
+
+###############################################################################
+# 〇、群名称 + 分词 + 下单备注 + 群昵称 — 完整联调（参数已写满，按顺序点「运行」即可）
+#
+# 【前提】海典同步库已执行 db/mcp_chat_group_config.sql（配置表 + 订单表扩展列）；本服务连的是该库。
+# 【顺序】步骤 1 → 2 → 3 → 4（5、6 可任选，与 3、4 等价不同入口）。
+# 【说明】groupName 必须与步骤 1 里 groupName 完全一致，才会按 segmentWords 拆成分词写入检索字段。
+#         查询时 groupToken 必须是 segmentWords 里某一个完整词（如「恒瑞」），不要带空格或半段字。
+# 【重跑】若步骤 1 报群名称已存在（唯一键），请先 DELETE 该配置，或把步骤 1、2 里两个 groupName 改成同一新字符串。
+###############################################################################
+
+### 〇-1 保存群配置（维护分词，与真实群名对齐）
+# groupName：业务侧下单时传入的群名称，须与此处一致（精确匹配，区分大小写按库 utf8mb4）
+# segmentWords：JSON 数组字符串，每个元素是一个检索词；下单后 group_tokens_search 会包含 |恒瑞|成都| 等形式
+# chatId / storeCode / configRemark：可选，便于运营备注
+POST {{BASE}}/mcp/chat-group-config/save
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "groupName": "一丰恒瑞患者服务群-成都旗舰店",
+  "chatId": "wxwork_chat_G20260324_demo",
+  "segmentWords": "[\"一丰\",\"恒瑞\",\"成都\",\"旗舰店\",\"患者服务\"]",
+  "storeCode": "STORE_CD_001",
+  "configRemark": "HTTP 联调用例：分词用于按「恒瑞」「成都」等筛选待审核订单"
+}
+
+### 〇-2 下单（REST，仅支持 chatInfo 传群字段；药品可留空数组走待审核补药）
+# patientName / patientPhone：患者信息
+# chatInfo.roomName：群名（必须与 〇-1 中 groupName 完全一致）
+# chatInfo.remark：下单备注
+# chatInfo.senderName：用户在群里的昵称
+# items：此处给空数组，便于只测群字段；若要测有药下单可改成与非空 items 示例相同
+POST {{BASE}}/mcp/core_order_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "chatInfo": {
+    "senderName": "李测试-家属（群昵称示例）",
+    "remark": "患者急用，请优先审核；来源：企业微信群下单",
+    "roomName": "一丰恒瑞患者服务群-成都旗舰店"
+  },
+  "patientName": "联调患者李测试",
+  "patientPhone": "13800138001",
+  "patientIdCard": "510105199001011234",
+  "patientEducation": "餐后温水送服",
+  "items": []
+}
+
+### 发货登记 core_shipment_create（姓名、地址、电话、邮寄方式必填；支持多药品 items）
+# 落库：海典库 mcp_shipment_request_log；页面「MCP 订单与发货」→「发货登记」可查看、编辑、点「发货」改状态
+POST {{BASE}}/mcp/core_shipment_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "recipientName": "张三",
+  "recipientPhone": "13900001111",
+  "address": "四川省成都市高新区示例路99号",
+  "shipMethod": "顺丰标快",
+  "remark": "备注可选",
+  "items": [
+    {
+      "drugName": "阿莫西林胶囊",
+      "spec": "0.25g*24粒",
+      "qty": 2,
+      "barCode": "6931435340413"
+    },
+    {
+      "name": "蒙脱石散",
+      "quantity": 1,
+      "spec": "3g*10袋"
+    }
+  ]
+}
+
+### 〇-2A 下单（你当前用户侧真实格式：chatInfo + items 字符串 "[]"）
+# 验证点：
+# 1) chatInfo.roomName -> group_name
+# 2) chatInfo.remark -> order_context_remark
+# 3) chatInfo.senderName -> user_group_nickname
+# 4) items 为字符串 "[]" 也能正常落库并进入待审核
+POST {{BASE}}/mcp/core_order_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "chatInfo": {
+    "senderName": "帅气的王大爷",
+    "remark": "测试音频文件",
+    "roomName": "一丰二医院患者支援群旗舰店"
+  },
+  "patientPhone": "13881748461",
+  "patientIdCard": "510111197209161293",
+  "items": "[]"
+}
+
+### 〇-2B 下单（chatInfo + items 真数组，顺便测药品归一化）
+POST {{BASE}}/mcp/core_order_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "chatInfo": {
+    "senderName": "李先生（本人）",
+    "remark": "请尽快审核，上午要用药",
+    "roomName": "一丰恒瑞患者服务群-成都旗舰店"
+  },
+  "patientPhone": "13800138112",
+  "patientName": "chatInfo格式测试-李二",
+  "patientIdCard": "510105199202022222",
+  "items": [
+    {
+      "name": "阿莫西林胶囊",
+      "quantity": 2,
+      "spec": "0.25g*24粒",
+      "barCode": "6931435340413"
+    },
+    {
+      "drugName": "蒙脱石散",
+      "qty": 1,
+      "spec": "3g*10袋"
+    }
+  ]
+}
+
+### 〇-3 按分词查询待审核订单（仅 audit_status=0，等价 tools/call：core_order_query_by_group_token）
+# groupToken：必须是 〇-1 里 segmentWords 中的某一个，例如「恒瑞」或「成都」
+GET {{BASE}}/mcp/order-query-by-group-token?groupToken=恒瑞
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### 〇-4 审核列表 + 状态筛选 + 分词（页面「刷新」同款接口）
+# status=0：待审核；groupToken：同上，与配置分词一致
+GET {{BASE}}/mcp/order-audit-list?status=0&groupToken=恒瑞
+
+### 〇-5 JSON-RPC：按分词查待审核（MCP 工具 core_order_query_by_group_token）
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 901,
+  "method": "tools/call",
+  "params": {
+    "name": "core_order_query_by_group_token",
+    "arguments": {
+      "groupToken": "成都"
+    }
+  }
+}
+
+### 〇-6 JSON-RPC：下单（仅支持 chatInfo 结构）
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 902,
+  "method": "tools/call",
+  "params": {
+    "name": "core_order_create",
+    "arguments": {
+      "chatInfo": {
+        "senderName": "王测试本人",
+        "remark": "JSON-RPC 渠道下单备注：chatInfo",
+        "roomName": "一丰恒瑞患者服务群-成都旗舰店"
+      },
+      "patientName": "联调患者王测试",
+      "patientPhone": "13800138002",
+      "patientIdCard": "510105199002022345",
+      "items": [
+        {
+          "drugName": "连花清瘟胶囊",
+          "spec": "0.35g*24粒",
+          "qty": 1,
+          "barCode": "6931234567890"
+        }
+      ]
+    }
+  }
+}
+
+### 〇-7 拉取当前全部群配置（核对 segment_words 是否生效）
+GET {{BASE}}/mcp/chat-group-config/list
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+###############################################################################
+# 一、MCP 协议（JSON-RPC 2.0）— 单端点 POST {{BASE}}/mcp/rpc
+###############################################################################
+
+### 握手 initialize
+# 入参：protocolVersion、capabilities、clientInfo
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": { "name": "client-name", "version": "1.0" }
+  }
+}
+
+### 客户端确认 initialized（可选）
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "method": "initialized"
+}
+
+### 获取工具列表 tools/list
+# 入参：无
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/list",
+  "params": {}
+}
+
+###############################################################################
+# 二、tools/call 调用各接口（统一单端点 POST {{BASE}}/mcp/rpc）
+# 响应：result.content[0].text 为 JSON 字符串，解析后为 { code, msg, data }
+###############################################################################
+
+### 订单查询 core_order_query
+# 入参：orderId（必填）- 订单号
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 10,
+  "method": "tools/call",
+  "params": {
+    "name": "core_order_query",
+    "arguments": {
+      "orderId": "1551015496417349"
+    }
+  }
+}
+
+### 医保/患者档案查询 core_insurance_query
+# 入参：userId / mobile / idCard 至少传一个
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "method": "tools/call",
+  "params": {
+    "name": "core_insurance_query",
+    "arguments": {
+      "idCard": "510124195806186612"
+    }
+  }
+}
+
+### 药品查询 core_drug_query
+# 入参：keyword（名称/拼音模糊）或 barCode（条码精准），至少传一个
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 12,
+  "method": "tools/call",
+  "params": {
+    "name": "core_drug_query",
+    "arguments": {
+      "keyword": "人血白蛋白"
+    }
+  }
+}
+
+### 回访策略查询 core_visit_strategy_query
+# 入参：businessId（可选）- 业务标识如订单号、患者ID
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 13,
+  "method": "tools/call",
+  "params": {
+    "name": "core_visit_strategy_query",
+    "arguments": {
+      "businessId": "1551015496417349"
+    }
+  }
+}
+
+### 下单 core_order_create
+# 入参（仅支持）：chatInfo + patientPhone + items
+# chatInfo：{ roomName, remark, senderName }，其中 roomName 与群配置一致时支持分词检索
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 14,
+  "method": "tools/call",
+  "params": {
+    "name": "core_order_create",
+    "arguments": {
+      "chatInfo": {
+        "senderName": "张三(家属)",
+        "remark": "急用",
+        "roomName": "恒瑞患者服务群-成都"
+      },
+      "patientPhone": "13558581817",
+      "items": [
+        { "drugName": "特比澳", "spec": "15000U", "qty": 14 },
+        { "drugName": "特比澳", "spec": "7500U", "qty": 14 }
+      ]
+    }
+  }
+}
+
+### 按群分词查待审核订单 core_order_query_by_group_token
+# groupToken 为群配置 segment_words 中的词，或整群名作为单一词时的子串；库表须有 group_tokens_search 列
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 14b,
+  "method": "tools/call",
+  "params": {
+    "name": "core_order_query_by_group_token",
+    "arguments": {
+      "groupToken": "恒瑞"
+    }
+  }
+}
+
+### 建档 core_profile_create（帮我建档）
+# 入参：name / idCard（18位）/ mobile（11位）任意两项即可
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 15,
+  "method": "tools/call",
+  "params": {
+    "name": "core_profile_create",
+    "arguments": {
+      "name": "李肆",
+      "mobile": "17388062638",
+      "idCard": "510124195806186612"
+    }
+  }
+}
+
+###############################################################################
+# 三、按工具单独 POST 调用每个接口（直连 URL，直接返回 { code, msg, data }）
+###############################################################################
+
+### 审核列表（可选按群分词筛选，与页面「群分词」一致）
+# GET {{BASE}}/mcp/order-audit-list?groupToken=恒瑞
+# GET {{BASE}}/mcp/order-audit-list?status=0&groupToken=恒瑞
+#
+### 审核列表（身份证触发 Tab）
+GET {{BASE}}/mcp/order-audit-list?requestTriggerType=idcard
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### 仅待审核 + 分词（等价于 JSON-RPC core_order_query_by_group_token）
+GET {{BASE}}/mcp/order-query-by-group-token?groupToken=恒瑞
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### 群名称配置：列表
+GET {{BASE}}/mcp/chat-group-config/list
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+### 群名称配置：保存（有 id 则更新）
+POST {{BASE}}/mcp/chat-group-config/save
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "groupName": "恒瑞患者服务群-成都",
+  "chatId": "wx_group_001",
+  "segmentWords": "[\"恒瑞\",\"成都\",\"患者\"]",
+  "storeCode": "S001",
+  "configRemark": "示例"
+}
+
+### 群名称配置：删除
+# DELETE {{BASE}}/mcp/chat-group-config/1
+
+### 订单查询
+# 参数：orderId（必填）
+POST {{BASE}}/mcp/core_order_query
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "orderId": "1551015496417349"
+}
+
+### 医保查询（按身份证）
+# 参数：userId / mobile / idCard 至少一个
+POST {{BASE}}/mcp/core_insurance_query
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "idCard": "510124195806180012"
+}
+
+### 医保查询（按手机号）
+# 参数：userId / mobile / idCard 至少一个
+POST {{BASE}}/mcp/core_insurance_query
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "mobile": "15208214176"
+}
+
+### 医保查询（按 userId）
+# 参数：userId / mobile / idCard 至少一个
+POST {{BASE}}/mcp/core_insurance_query
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "userId": 3148
+}
+
+### 药品查询（按关键字/拼音）
+# 参数：keyword 或 barCode 至少一个
+POST {{BASE}}/mcp/core_drug_query
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "keyword": "阿莫西林"
+}
+
+### 药品查询（按条码）
+# 参数：keyword 或 barCode 至少一个
+POST {{BASE}}/mcp/core_drug_query
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "barCode": "6931435340413"
+}
+
+### 回访策略查询
+# 参数：businessId（可选）
+POST {{BASE}}/mcp/core_visit_strategy_query
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "businessId": "1551015496417349"
+}
+
+### 下单
+# 参数（推荐结构化）：patientName/patientPhone/patientIdCard（可选） + items（必填数组）
+POST {{BASE}}/mcp/core_order_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "patientName": "张三",
+  "patientPhone": "17699238721",
+  "items": [
+    { "drugName": "阿莫西林胶囊", "spec": "0.5g*11片*2板", "qty": 2 },
+    { "drugName": "通窍鼻炎颗粒", "qty": 8 }
+  ]
+}
+
+###############################################################################
+# 三-1、下单 core_order_create — 固定入参（仅支持 chatInfo 模式）
+# 说明：不再接受 requestJson、groupName、userGroupNickname、orderRemark 及 snake_case 同义字段。
+###############################################################################
+
+### JSON-RPC — core_order_create（chatInfo + patientPhone + items）
+POST {{BASE}}/mcp/rpc
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "jsonrpc": "2.0",
+  "id": 140,
+  "method": "tools/call",
+  "params": {
+    "name": "core_order_create",
+    "arguments": {
+      "chatInfo": {
+        "senderName": "RPC测试用户",
+        "remark": "请尽快处理",
+        "roomName": "一丰二医院患者支援群旗舰店"
+      },
+      "patientName": "RPC蛇形",
+      "patientPhone": "13111112222",
+      "patientIdCard": "510105199201011234",
+      "items": [
+        { "drugName": "藿香正气水", "qty": 6, "spec": "10ml*10支" }
+      ]
+    }
+  }
+}
+
+### 建档（帮我建档）
+# 参数：name / idCard（18位）/ mobile（11位）任意两项即可
+POST {{BASE}}/mcp/core_profile_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "name": "王建档",
+  "idCard": "510124199001011299",
+  "mobile": "13558581899"
+}
+
+### 小程序回调：更新订单状态（海典同步库表B：mcp_order_create_order_log）
+# 参数：orderId 或 pendingId 至少一个；statusCode 对照：1预下单 2已领单 3配送中 4待上传凭证 5完成 6驳回 7已退单
+POST {{BASE}}/mcp/core_order_status_update
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "orderId": "PD-2026-03-17-58179780",
+  "statusCode": 5,
+  "receiverName": "张三",
+  "completionImagesJson": "{\"images\":[\"https://xx/a.jpg\",\"https://xx/b.jpg\"]}",
+  "invoiceInfo": "{\"title\":\"四川某某公司\",\"taxNo\":\"9151xxxx\",\"email\":\"xx@xx.com\",\"needInvoice\":true}",
+  "callbackData": "{\"payChannel\":\"wx\",\"transactionId\":\"420000xxxx\",\"payTime\":\"2026-03-19 10:11:12\"}"
+}
+
+###############################################################################
+# 工具清单：core_order_query | core_insurance_query | core_drug_query | core_visit_strategy_query | core_order_create | core_profile_create
+# 统一响应：{ "code": 0 成功 / 4xx 参数或业务错误 / 5xx 服务错误, "msg": "说明", "data": 业务数据或 null }
+# 重复建档：code=409，msg="该身份证已建档，无需重复提交"
+#
+# 下单审计（双表）：
+# - 表A/B 落在海典同步库（haidian.datasource），非 jimureport 主库
+# - 表A mcp_order_create_request_log：保存用户传入原始下单数据
+# - 表B mcp_order_create_order_log：保存我方生成订单数据 + 中台响应 + 小程序回调数据
+# 部署前请在海典同步库执行：db/mcp_order_create_log.sql、db/mcp_chat_group_config.sql（群配置 + 订单表群字段/分词检索列）
+###############################################################################
+
+### 身份证触发下单（REST）测试
+# 说明：
+# 1) requestTriggerType=idcard；
+# 2) patientPhone 留空，仅用身份证触发；
+# 3) 身份证触发=私聊单：不传 roomName/groupName；但要能带出门店、备注、昵称、患教、药品信息；
+# 4) 审核页应出现在「订单审核（身份证）」Tab，且不展示「群名称」列。
+POST {{BASE}}/mcp/core_order_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "requestTriggerType": "idcard",
+  "chatInfo": {
+    "storeId": "10396",
+    "remark": "私聊身份证下单备注：请尽快处理",
+    "nickName": "私聊微信昵称示例"
+  },
+  "patientIdCard": "510124196611102924",
+  "items": [
+    {
+      "drugName": "阿莫西林胶囊",
+      "spec": "0.25g*24粒",
+      "qty": 1,
+      "barCode": "6931435340413"
+    }
+  ]
+}
+
+### 身份证触发订单审核通过（提交中台）测试
+# 说明：先运行上一条 core_order_create，拿到返回 data.pendingId，再填入这里。
+POST {{BASE}}/mcp/core_order_approve
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "pendingId": "PD-REPLACE-ME",
+  "auditRemark": "HTTP用例：身份证私聊下单"
+}

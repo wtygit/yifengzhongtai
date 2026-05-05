@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jeecg.modules.jmreport.mapper.ApiFieldMapper">
+    <insert id="insert" parameterType="com.jeecg.modules.jmreport.entity.ApiField">
+        INSERT INTO api_field (id, api_id, database_name, table_name, field_name, alias, data_type, is_primary, is_required, description)
+        VALUES (#{id}, #{apiId}, #{databaseName}, #{tableName}, #{fieldName}, #{alias}, #{dataType}, #{isPrimary}, #{isRequired}, #{description})
+    </insert>
+    
+    <update id="updateById" parameterType="com.jeecg.modules.jmreport.entity.ApiField">
+        UPDATE api_field
+        SET api_id = #{apiId},
+            database_name = #{databaseName},
+            table_name = #{tableName},
+            field_name = #{fieldName},
+            alias = #{alias},
+            data_type = #{dataType},
+            is_primary = #{isPrimary},
+            is_required = #{isRequired},
+            description = #{description}
+        WHERE id = #{id}
+    </update>
+    
+    <delete id="deleteByApiId" parameterType="java.lang.String">
+        DELETE FROM api_field WHERE api_id = #{apiId}
+    </delete>
+</mapper>

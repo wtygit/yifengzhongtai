@@ -1,0 +1,2636 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP订单审核</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+        .order-table {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: visible;
+        }
+        .table thead {
+            background-color: #f8f9fa;
+        }
+        .table thead th {
+            border-bottom: 2px solid #dee2e6;
+            font-weight: 600;
+            padding: 12px;
+        }
+        .table tbody td {
+            padding: 12px;
+            vertical-align: middle;
+        }
+        .editable-field {
+            border: 1px solid transparent;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: transparent;
+            width: 100%;
+            min-width: 120px;
+        }
+        .editable-field:focus {
+            border-color: #1890ff;
+            background: #fff;
+            outline: none;
+        }
+        .editable-field:hover {
+            background: #f0f0f0;
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status-approved {
+            background-color: #d1e7dd;
+            color: #0f5132;
+        }
+        .status-completed {
+            background-color: #cfe2ff;
+            color: #084298;
+        }
+        .status-rejected {
+            background-color: #f8d7da;
+            color: #842029;
+        }
+        .expand-btn {
+            cursor: pointer;
+            color: #1890ff;
+            text-decoration: none;
+            user-select: none;
+            position: relative;
+            z-index: 10;
+        }
+        .expand-btn:hover {
+            text-decoration: underline;
+        }
+        .drug-details {
+            display: none !important;
+            margin-top: 5px;
+            padding: 10px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            position: absolute;
+            z-index: 10000;
+            min-width: 300px;
+            max-width: 500px;
+            left: 0;
+            top: 100%;
+            white-space: normal;
+        }
+        .drug-details.show {
+            display: block !important;
+        }
+        .table {
+            position: relative;
+        }
+        .table tbody td {
+            position: relative;
+        }
+        .table tbody td:has(.drug-details) {
+            overflow: visible;
+            position: relative;
+        }
+        .table-container {
+            overflow: visible;
+        }
+        .table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        .drug-item {
+            padding: 6px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .drug-item:last-child {
+            border-bottom: none;
+        }
+        /* 待处理且未查看过药品明细时显示，便于区分新单 */
+        .new-order-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #ff4d4f;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: middle;
+            flex-shrink: 0;
+            box-shadow: 0 0 0 1px rgba(255, 77, 79, 0.25);
+        }
+        .pending-id-cell {
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+        }
+        .drug-edit-item {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .modal-body {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .mcp-audit-group-token-bar {
+            background: #e6f4ff;
+            border: 1px solid #bae0ff;
+            border-radius: 8px;
+        }
+        /* 停留在「发货登记」时若收到订单 WS 事件，在「订单审核」Tab 上提示 */
+        .mcp-tab-attention-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #ff4d4f;
+            border-radius: 50%;
+            margin-left: 6px;
+            vertical-align: middle;
+            box-shadow: 0 0 0 1px rgba(255, 77, 79, 0.25);
+        }
+    </style>
+</head>
+<body th:attr="data-mcp-audit-store-id=${mcpAuditStoreId},data-mcp-audit-admin-bypass=${mcpAuditAdminBypass}">
+    <div id="mcp-order-audit-sound-config" class="d-none"
+         th:data-sound-new="${mcpOrderAuditSoundNew}"
+         th:data-sound-merged="${mcpOrderAuditSoundMerged}"
+         th:data-sound-save="${mcpOrderAuditSoundSave}"
+         th:data-shipment-sound-new="${mcpOrderAuditShipmentSoundNew}"
+         th:data-shipment-sound-merged="${mcpOrderAuditShipmentSoundMerged}"></div>
+    <nav class="navbar navbar-expand-lg" style="background-color: #1890ff; color: white; margin-bottom: 20px;">
+        <a class="navbar-brand" href="#" style="color: white; font-size: 16px; font-weight: bold; padding-left: 20px;">一丰中台</a>
+        <div class="navbar-collapse d-flex align-items-center w-100">
+            <ul class="navbar-nav d-flex flex-row align-items-center gap-1 mb-0">
+                <li class="nav-item">
+                    <a class="nav-link" href="/api-generator/list" style="color: white;">API列表</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/api-generator/design" style="color: white;">新建API</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/table-association" style="color: white;">多表关联建模</a>
+                </li>
+                <li class="nav-item active">
+                    <a class="nav-link" href="/mcp/order-audit" style="color: white; background-color: rgba(255,255,255,0.2);">MCP订单审核</a>
+                </li>
+                <li class="nav-item" th:if="${mcpAuditAdminBypass}">
+                    <a class="nav-link" href="/mcp/store-login-admin" style="color: white;">门店密码管理</a>
+                </li>
+            </ul>
+            <div class="ms-auto d-flex align-items-center gap-2">
+            <a class="jimu-logout jimu-switch" href="/jmreport/list" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" style="margin-right: 5px;">
+                    <path d="M10 2L2 7v6l8 5 8-5V7l-8-5z"/>
+                </svg>
+                进入报表工作台
+            </a>
+            <a class="jimu-logout" href="/logout" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" style="margin-right: 5px;">
+                    <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z"/>
+                </svg>
+                <span>退出登录</span>
+            </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <h2 class="mb-0">MCP 订单与发货</h2>
+            <span th:if="${mcpAuditAdminBypass}" class="badge bg-success">管理员模式：权限不受门店限制</span>
+            <span th:if="${!mcpAuditAdminBypass and mcpAuditStoreId != null and !#strings.isEmpty(mcpAuditStoreId)}" class="badge bg-secondary">登录门店编号：<span th:text="${mcpAuditStoreId}">-</span></span>
+            <span th:if="${!mcpAuditAdminBypass and (mcpAuditStoreId == null or #strings.isEmpty(mcpAuditStoreId))}" class="badge bg-warning text-dark">未选择登录门店：带门店后缀的群订单将无法编辑/下单</span>
+        </div>
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="mcp-tab-order" data-bs-toggle="tab" data-bs-target="#mcp-pane-order" type="button" role="tab">订单审核</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="mcp-tab-order-idcard" data-bs-toggle="tab" data-bs-target="#mcp-pane-order" type="button" role="tab">订单审核（身份证）</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="mcp-tab-shipment" data-bs-toggle="tab" data-bs-target="#mcp-pane-shipment" type="button" role="tab">发货登记</button>
+            </li>
+        </ul>
+        <div class="tab-content border border-top-0 rounded-bottom p-3 bg-white mb-3" style="border-color: #dee2e6 !important;">
+        <div class="tab-pane fade show active" id="mcp-pane-order" role="tabpanel">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <h3 class="h5 mb-0 text-secondary">待审核订单</h3>
+            <div class="d-flex align-items-center flex-wrap gap-2 justify-content-end">
+                <span id="filterResultCount" class="badge bg-info text-dark">筛选结果：0单</span>
+                <select id="filterStatus" class="form-select form-select-sm" style="width: 120px;" title="审核状态：接口新建的待审核单为「待下单」；筛成「已下单」时看不到未审核数据">
+                    <option value="">全部状态</option>
+                    <option value="0">待下单</option>
+                    <option value="1">已下单</option>
+                    <option value="2">已驳回</option>
+                    <option value="3" class="trigger-idcard-only">已完成</option>
+                </select>
+                <input id="filterPendingId" class="form-control form-control-sm" style="width: 180px;" placeholder="订单号/pendingId">
+                <input id="filterPatientName" class="form-control form-control-sm" style="width: 140px;" placeholder="患者姓名">
+                <input id="filterPatientPhone" class="form-control form-control-sm" style="width: 150px;" placeholder="手机号">
+                <input id="filterPatientIdCard" class="form-control form-control-sm d-none" style="width: 200px;" placeholder="身份证号">
+                <input id="filterGroupName" class="form-control form-control-sm trigger-phone-only" style="width: 180px;" placeholder="群名称">
+                <label class="mb-0 small text-muted" for="filterCreateDateStart">创建日期</label>
+                <input id="filterCreateDateStart" type="date" class="form-control form-control-sm" style="width: 155px;" title="创建日期起（含当天 0 点起）">
+                <span class="small text-muted">至</span>
+                <input id="filterCreateDateEnd" type="date" class="form-control form-control-sm" style="width: 155px;" title="创建日期止（含当天全天）">
+                <button type="button" class="btn btn-outline-success" onclick="exportSelectedOrders()">导出所选</button>
+                <button type="button" class="btn btn-outline-primary" onclick="openManualAddOrderModal()">手动新增</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="resetFilters()">重置</button>
+                <button type="button" class="btn btn-primary" onclick="loadOrders()">查询/刷新</button>
+            </div>
+        </div>
+        <div class="mcp-audit-group-token-bar d-flex flex-wrap align-items-center gap-2 mb-3 px-3 py-2">
+            <span class="small fw-semibold text-primary mb-0">群分词</span>
+            <select id="filterGroupToken" class="form-select form-select-sm" style="width: 220px; max-width: 100%;"
+                    title="按配置表分词筛选；与「群名称」文本筛选不同">
+                <option value="">全部</option>
+            </select>
+            <span class="small text-muted">（与上方「群名称」筛选不同：此处为配置分词命中）</span>
+        </div>
+
+        <div id="loading" class="text-center" style="display: none;">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+        </div>
+
+        <div class="order-table table-container">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 46px;">
+                            <input type="checkbox" id="orderSelectAll" title="全选当前列表">
+                        </th>
+                        <th style="width: 150px;">订单号</th>
+                        <th style="width: 100px;">状态</th>
+                        <th style="width: 120px;">患者姓名</th>
+                        <th class="trigger-phone-only" style="width: 130px;">手机号</th>
+                        <th class="trigger-idcard-only" style="width: 180px;">身份证</th>
+                        <th class="trigger-phone-only" style="width: 120px;">群名称</th>
+                        <th style="width: 100px;">门店</th>
+                        <th style="width: 180px;">患教</th>
+                        <th style="width: 100px;">下单备注</th>
+                        <th style="width: 100px;">昵称</th>
+                        <th style="width: 180px;">创建时间</th>
+                        <th style="width: 80px;">药品信息</th>
+                        <th style="width: 150px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="orderList">
+                    <tr>
+                        <td colspan="14" class="text-center text-muted">加载中...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        </div>
+        <div class="tab-pane fade" id="mcp-pane-shipment" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <span id="shipFilterResultCount" class="badge bg-secondary">共 0 条</span>
+                <div class="d-flex align-items-center flex-wrap gap-2 justify-content-end">
+                    <select id="shipFilterStatus" class="form-select form-select-sm" style="width: 120px;" title="发货状态">
+                        <option value="">全部</option>
+                        <option value="0">待发货</option>
+                        <option value="1">已发货</option>
+                    </select>
+                    <input id="shipFilterShipmentId" class="form-control form-control-sm" style="width: 200px;" placeholder="发货单号/shipmentId">
+                    <input id="shipFilterPhone" class="form-control form-control-sm" style="width: 140px;" placeholder="电话">
+                    <input id="shipFilterName" class="form-control form-control-sm" style="width: 120px;" placeholder="姓名">
+                    <label class="mb-0 small text-muted" for="shipFilterDateStart">创建日期</label>
+                    <input id="shipFilterDateStart" type="date" class="form-control form-control-sm" style="width: 155px;">
+                    <span class="small text-muted">至</span>
+                    <input id="shipFilterDateEnd" type="date" class="form-control form-control-sm" style="width: 155px;">
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="openManualAddShipmentModal()">手动新增</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="resetShipFilters()">重置</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="loadShipments()">查询/刷新</button>
+                </div>
+            </div>
+            <div id="shipLoading" class="text-center py-2" style="display: none;">
+                <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">加载中</span></div>
+            </div>
+            <div class="order-table table-container">
+                <table class="table table-hover table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th style="min-width: 180px;">发货单号</th>
+                            <th style="width: 90px;">状态</th>
+                            <th style="width: 100px;">姓名</th>
+                            <th style="width: 120px;">电话</th>
+                            <th style="min-width: 200px;">地址</th>
+                            <th style="width: 100px;">邮寄方式</th>
+                            <th style="min-width: 120px;">备注</th>
+                            <th style="width: 160px;">创建时间</th>
+                            <th style="width: 160px;">发货时间</th>
+                            <th style="width: 160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="shipList">
+                        <tr><td colspan="10" class="text-center text-muted">切换到本页后自动加载</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <!-- 编辑模态框 -->
+    <div class="modal fade" id="editModal" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editModalLabel">编辑订单信息</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editForm">
+                        <input type="hidden" id="editPendingId" name="pendingId">
+                        <div class="mb-3">
+                            <label for="editOrderId" class="form-label">订单号</label>
+                            <input type="text" class="form-control" id="editOrderId" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editPatientName" class="form-label">患者姓名 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editPatientName" name="patientName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editPatientPhone" class="form-label">手机号 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editPatientPhone" name="patientPhone" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editPatientIdCard" class="form-label">身份证</label>
+                            <input type="text" class="form-control" id="editPatientIdCard" name="patientIdCard">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editPatientEducation" class="form-label">患教</label>
+                            <select class="form-select" id="editPatientEducation" name="patientEducation">
+                                <option value="">请选择患教</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">药品信息</label>
+                            <div id="editDrugList" class="border rounded p-3" style="max-height: 400px; overflow-y: auto;">
+                                <!-- 药品列表将动态生成 -->
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addDrugItem()">
+                                <span>+</span> 添加药品
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEdit()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 手动新增订单（补漏单） -->
+    <div class="modal fade" id="manualAddOrderModal" tabindex="-1" aria-labelledby="manualAddOrderModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manualAddOrderModalLabel">手动新增订单</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="manualAddOrderForm">
+                        <div class="alert alert-info py-2 small mb-3">
+                            用于补录漏掉的订单数据：创建后会进入“待下单”列表，可再编辑/下单。
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label">患者姓名</label>
+                                <input id="manualPatientName" type="text" class="form-control" placeholder="可选">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" id="manualPhoneLabel">手机号</label>
+                                <input id="manualPatientPhone" type="text" class="form-control" placeholder="11位手机号">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" id="manualIdCardLabel">身份证号</label>
+                                <input id="manualPatientIdCard" type="text" class="form-control" placeholder="18位身份证(身份证板块建议填)">
+                            </div>
+                            <div class="col-md-4 trigger-phone-only" id="manualGroupNameWrap">
+                                <label class="form-label">群名称</label>
+                                <input id="manualGroupName" type="text" class="form-control" placeholder="可选（群单）">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">患教</label>
+                                <select id="manualPatientEducation" class="form-select">
+                                    <option value="">请选择患教</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">下单备注</label>
+                                <input id="manualOrderRemark" type="text" class="form-control" placeholder="可选">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">门店号</label>
+                                <input id="manualOrderStoreId" type="text" class="form-control" placeholder="可选，不填则用当前登录门店">
+                            </div>
+                        </div>
+                        <hr class="my-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="fw-semibold">药品信息（可为空）</div>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="manualAddDrugRow()">+ 添加药品</button>
+                        </div>
+                        <div id="manualDrugList" class="border rounded p-2 mt-2" style="max-height: 320px; overflow-y: auto;">
+                            <div class="text-muted small">不填药品也可以先创建，后续在列表“编辑”里补充。</div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitManualAddOrder()">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 手动新增发货登记（补漏单） -->
+    <div class="modal fade" id="manualAddShipmentModal" tabindex="-1" aria-labelledby="manualAddShipmentModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manualAddShipmentModalLabel">手动新增发货登记</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="manualAddShipmentForm">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label">收件人姓名 <span class="text-danger">*</span></label>
+                                <input id="manualShipName" type="text" class="form-control" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">收件人电话 <span class="text-danger">*</span></label>
+                                <input id="manualShipPhone" type="text" class="form-control" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">邮寄方式 <span class="text-danger">*</span></label>
+                                <input id="manualShipMethod" type="text" class="form-control" placeholder="如：顺丰/邮政" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">备注</label>
+                                <input id="manualShipRemark" type="text" class="form-control" placeholder="可选">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">地址 <span class="text-danger">*</span></label>
+                                <textarea id="manualShipAddress" class="form-control" rows="2" required></textarea>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitManualAddShipment()">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新订单 WebSocket 推送提示 -->
+    <div class="modal fade" id="newOrderNotifyModal" tabindex="-1" aria-labelledby="newOrderNotifyLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-primary" style="border-width: 2px;">
+                <div class="modal-header text-white" style="background-color: #1890ff;">
+                    <h5 class="modal-title" id="newOrderNotifyLabel">新订单待审核</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">有新提交的 MCP 订单需要审核，列表已自动刷新。</p>
+                    <div id="newOrderNotifyList" class="small text-muted"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">知道了</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="mergedOrderNotifyModal" tabindex="-1" aria-labelledby="mergedOrderNotifyLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-warning" style="border-width: 2px;">
+                <div class="modal-header text-dark" style="background-color: #ffc107;">
+                    <h5 class="modal-title" id="mergedOrderNotifyLabel">重复提交已合并</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">检测到短时间内同手机号重复提交，已更新最近待审核订单。</p>
+                    <div id="mergedOrderNotifyList" class="small text-muted"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-warning" data-bs-dismiss="modal">知道了</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 发货登记 WebSocket 推送（新单 / 短时合并），与订单审核弹窗风格一致 -->
+    <div class="modal fade" id="newShipmentNotifyModal" tabindex="-1" aria-labelledby="newShipmentNotifyLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-primary" style="border-width: 2px;">
+                <div class="modal-header text-white" style="background-color: #1890ff;">
+                    <h5 class="modal-title" id="newShipmentNotifyLabel">新发货登记</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">有新的 MCP 发货登记，列表可在「发货登记」页刷新查看。</p>
+                    <div id="newShipmentNotifyList" class="small text-muted"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">知道了</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="mergedShipmentNotifyModal" tabindex="-1" aria-labelledby="mergedShipmentNotifyLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-warning" style="border-width: 2px;">
+                <div class="modal-header text-dark" style="background-color: #ffc107;">
+                    <h5 class="modal-title" id="mergedShipmentNotifyLabel">发货重复提交已合并</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">短时间内同手机号重复提交，已更新最近一条待发货登记（与订单合并逻辑一致）。</p>
+                    <div id="mergedShipmentNotifyList" class="small text-muted"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-warning" data-bs-dismiss="modal">知道了</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="shipEditModal" tabindex="-1" aria-labelledby="shipEditModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="shipEditModalLabel">编辑发货登记</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">发货单号</label>
+                        <input type="text" class="form-control" id="shipEditShipmentId" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">收件人姓名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="shipEditName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">电话 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="shipEditPhone" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">收货地址 <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="shipEditAddress" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">邮寄方式 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="shipEditMethod" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <input type="text" class="form-control" id="shipEditRemark">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveShipEdit()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <script>
+        const BASE_URL = window.location.origin;
+        const MCP_AUDIT_STORE_ID = (document.body.getAttribute('data-mcp-audit-store-id') || '').trim();
+        const MCP_AUDIT_ADMIN_BYPASS = String(document.body.getAttribute('data-mcp-audit-admin-bypass') || '').toLowerCase() === 'true';
+        let orderDataMap = new Map(); // 存储订单原始数据，用于保存修改
+        let patientEducationOptions = [];
+        let currentOrderTriggerType = 'phone'; // phone | idcard
+        let selectedOrderPendingIds = new Set();
+
+        /** 群名称如 xxx-10389,10391：取后缀门店编号集合，当前登录门店在集合中即可编辑/下单 */
+        function storeIdsFromGroupNameText(text) {
+            if (!text || typeof text !== 'string') return [];
+            const m = text.trim().match(/-([\d,，\s]+)$/);
+            if (!m) return [];
+            return m[1].replace(/，/g, ',').split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
+        }
+        function canEditOrderByGroupName(groupName) {
+            if (MCP_AUDIT_ADMIN_BYPASS) return true;
+            const storeIds = storeIdsFromGroupNameText(groupName || '');
+            if (!storeIds.length) return false;
+            if (!MCP_AUDIT_STORE_ID) return false;
+            return storeIds.includes(MCP_AUDIT_STORE_ID);
+        }
+        /** audit_status：0 待下单，1 已下单，2 已驳回，3 身份证私聊单本地已完成 */
+        function formatOrderAuditStatusText(auditStatus) {
+            const st = Number(auditStatus);
+            if (st === 0) return '待下单';
+            if (st === 1) return '已下单';
+            if (st === 2) return '已驳回';
+            if (st === 3) return '已完成';
+            return String(auditStatus);
+        }
+        function formatOrderAuditStatusClass(auditStatus) {
+            const st = Number(auditStatus);
+            if (st === 0) return 'status-pending';
+            if (st === 1) return 'status-approved';
+            if (st === 2) return 'status-rejected';
+            if (st === 3) return 'status-completed';
+            return 'status-pending';
+        }
+        function applyOrderTriggerVisibility() {
+            const isIdcard = currentOrderTriggerType === 'idcard';
+            const statusSel = document.getElementById('filterStatus');
+            if (!isIdcard && statusSel && statusSel.value === '3') {
+                statusSel.value = '';
+            }
+            document.querySelectorAll('.trigger-phone-only').forEach(el => {
+                el.style.display = isIdcard ? 'none' : '';
+            });
+            document.querySelectorAll('.trigger-idcard-only').forEach(el => {
+                el.style.display = isIdcard ? '' : 'none';
+            });
+            const phoneInput = document.getElementById('filterPatientPhone');
+            const idCardInput = document.getElementById('filterPatientIdCard');
+            const groupNameInput = document.getElementById('filterGroupName');
+            if (phoneInput) {
+                phoneInput.classList.toggle('d-none', isIdcard);
+                if (isIdcard) phoneInput.value = '';
+            }
+            if (idCardInput) {
+                idCardInput.classList.toggle('d-none', !isIdcard);
+                if (!isIdcard) idCardInput.value = '';
+            }
+            if (groupNameInput) {
+                groupNameInput.classList.toggle('d-none', isIdcard);
+                if (isIdcard) groupNameInput.value = '';
+            }
+            const titleEl = document.querySelector('#mcp-pane-order h3.h5');
+            if (titleEl) {
+                titleEl.textContent = isIdcard ? '待审核订单（身份证触发）' : '待审核订单';
+            }
+        }
+        function setOrderTriggerType(type, reload) {
+            currentOrderTriggerType = type === 'idcard' ? 'idcard' : 'phone';
+            selectedOrderPendingIds.clear();
+            loadPersistedFiltersForCurrentTrigger();
+            if (reload !== false) {
+                loadOrders();
+            }
+        }
+        function downloadExcel(filename, headers, rows) {
+            const esc = (v) => {
+                if (v == null) return '';
+                return String(v)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+            };
+            const headHtml = '<tr>' + headers.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>';
+            const bodyHtml = rows.map(r => '<tr>' + r.map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('');
+            const html = '<html><head><meta charset="UTF-8"></head><body><table border="1">' + headHtml + bodyHtml + '</table></body></html>';
+            const blob = new Blob(['\uFEFF' + html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                a.remove();
+            }, 0);
+        }
+        function exportSelectedOrders() {
+            if (!selectedOrderPendingIds.size) {
+                alert('请先勾选要导出的订单');
+                return;
+            }
+            const isIdcard = currentOrderTriggerType === 'idcard';
+            const headers = isIdcard
+                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '患教', '下单备注', '昵称', '创建时间']
+                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '患教', '下单备注', '群昵称', '创建时间'];
+            const rows = [];
+            selectedOrderPendingIds.forEach(pid => {
+                const od = orderDataMap.get(pid);
+                if (!od || !od.order) return;
+                const o = od.order;
+                const statusText = formatOrderAuditStatusText(o.audit_status);
+                rows.push(isIdcard
+                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.patient_education || '', o.order_remark || '', o.user_group_nickname || '', formatDateTime(o.create_time || '')]
+                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.patient_education || '', o.order_remark || '', o.user_group_nickname || '', formatDateTime(o.create_time || '')]);
+            });
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+            downloadExcel((isIdcard ? '订单审核_身份证_' : '订单审核_手机号_') + stamp + '.xls', headers, rows);
+        }
+        function buildPatientEducationSelectHtml(pendingId, currentValue, disabled) {
+            const opts = ['<option value="">请选择患教</option>'];
+            const current = (currentValue || '').trim();
+            if (current && !patientEducationOptions.some(x => String(x.id || '').trim() === current)) {
+                opts.push('<option value="' + escapeHtml(current) + '" selected>' + escapeHtml(current + '（历史值）') + '</option>');
+            }
+            patientEducationOptions.forEach(function (x) {
+                const id = String(x.id || '').trim();
+                if (!id) return;
+                const label = String(x.label || x.name || id);
+                const selected = id === current ? ' selected' : '';
+                opts.push('<option value="' + escapeHtml(id) + '"' + selected + '>' + escapeHtml(label) + '</option>');
+            });
+            const dis = disabled ? ' disabled' : '';
+            return '<select class="form-select form-select-sm patient-education-select" data-pending-id="' + escapeHtml(pendingId) + '"' + dis + '>'
+                + opts.join('')
+                + '</select>';
+        }
+        function onPatientEducationChange(pendingId, value) {
+            const od = orderDataMap.get(pendingId);
+            if (!od || !od.order) return;
+            od.order.patient_education = value || '';
+            const modalEl = document.getElementById('editPendingId');
+            if (modalEl && modalEl.value === pendingId) {
+                const editSel = document.getElementById('editPatientEducation');
+                if (editSel) {
+                    editSel.value = value || '';
+                }
+            }
+        }
+        function fillPatientEducationSelect(selectEl, selectedValue) {
+            if (!selectEl) return;
+            const current = (selectedValue || '').trim();
+            let html = '<option value="">请选择患教</option>';
+            if (current && !patientEducationOptions.some(x => String(x.id || '').trim() === current)) {
+                html += '<option value="' + escapeHtml(current) + '">' + escapeHtml(current + '（历史值）') + '</option>';
+            }
+            patientEducationOptions.forEach(function (x) {
+                const id = String(x.id || '').trim();
+                if (!id) return;
+                const label = String(x.label || x.name || id);
+                const selected = id === current ? ' selected' : '';
+                html += '<option value="' + escapeHtml(id) + '"' + selected + '>' + escapeHtml(label) + '</option>';
+            });
+            selectEl.innerHTML = html;
+            selectEl.value = current || '';
+        }
+        const MCP_AUDIT_GROUP_TOKEN_KEY = 'mcp_order_audit_group_token';
+        /** 旧版统一 key，仅用于迁移到按 Tab 拆分后的存储 */
+        const MCP_AUDIT_FILTERS_KEY_LEGACY = 'mcp_order_audit_filters_v2';
+        function mcpAuditFiltersStorageKey(triggerType) {
+            return 'mcp_order_audit_filters_v2_' + (triggerType === 'idcard' ? 'idcard' : 'phone');
+        }
+        /** 切换「手机号 / 身份证」Tab 时高亮与列显示 */
+        function applyOrderTabHighlightAndVisibility() {
+            const tabPhone = document.getElementById('mcp-tab-order');
+            const tabId = document.getElementById('mcp-tab-order-idcard');
+            if (tabPhone && tabId) {
+                tabPhone.classList.toggle('active', currentOrderTriggerType !== 'idcard');
+                tabId.classList.toggle('active', currentOrderTriggerType === 'idcard');
+            }
+            applyOrderTriggerVisibility();
+        }
+        /**
+         * 从 localStorage 恢复当前 Tab 的筛选；身份证 Tab 首次无记录时默认「全部状态」，
+         * 避免沿用手机号 Tab 里选的「已下单」导致新单（待下单）被滤掉。
+         */
+        function loadPersistedFiltersForCurrentTrigger() {
+            let raw = localStorage.getItem(mcpAuditFiltersStorageKey(currentOrderTriggerType));
+            if (!raw && currentOrderTriggerType === 'phone') {
+                raw = localStorage.getItem(MCP_AUDIT_FILTERS_KEY_LEGACY);
+            }
+            const set = (id, v) => {
+                const el = document.getElementById(id);
+                if (el) el.value = v || '';
+            };
+            if (!raw) {
+                if (currentOrderTriggerType === 'idcard') {
+                    set('filterStatus', '');
+                }
+                applyOrderTabHighlightAndVisibility();
+                return;
+            }
+            try {
+                const saved = JSON.parse(raw);
+                set('filterStatus', saved.status);
+                set('filterGroupToken', saved.groupToken);
+                set('filterPendingId', saved.pendingId);
+                set('filterPatientName', saved.patientName);
+                set('filterPatientPhone', saved.patientPhone);
+                set('filterPatientIdCard', saved.patientIdCard);
+                set('filterGroupName', saved.groupName);
+                set('filterCreateDateStart', saved.createDateStart);
+                set('filterCreateDateEnd', saved.createDateEnd);
+                if (currentOrderTriggerType === 'idcard') {
+                    set('filterPatientPhone', '');
+                    set('filterGroupName', '');
+                } else {
+                    set('filterPatientIdCard', '');
+                }
+            } catch (e) {
+                /* ignore */
+            }
+            // 「已完成」仅身份证 Tab 可选；若持久化里误带了 3，在手机号 Tab 下清掉
+            if (currentOrderTriggerType !== 'idcard') {
+                const fs = document.getElementById('filterStatus');
+                if (fs && fs.value === '3') {
+                    fs.value = '';
+                }
+            }
+            applyOrderTabHighlightAndVisibility();
+        }
+        let pendingNotifyOrders = [];
+        let pendingMergedNotifyOrders = [];
+        let pendingNotifyShipments = [];
+        let pendingMergedNotifyShipments = [];
+        let shipmentPollTimer = null;
+        // 库存信息模块已移除
+
+        const MCP_AUDIT_VIEWED_KEY = 'mcp_order_audit_viewed_pending_ids';
+
+        function getViewedPendingIdSet() {
+            try {
+                const raw = localStorage.getItem(MCP_AUDIT_VIEWED_KEY);
+                if (!raw) return new Set();
+                const arr = JSON.parse(raw);
+                return new Set(Array.isArray(arr) ? arr : []);
+            } catch (e) {
+                return new Set();
+            }
+        }
+
+        function markPendingOrderViewed(pendingId) {
+            if (!pendingId) return;
+            const s = getViewedPendingIdSet();
+            s.add(pendingId);
+            localStorage.setItem(MCP_AUDIT_VIEWED_KEY, JSON.stringify([...s]));
+            clearNewOrderDotInRow(pendingId);
+        }
+
+        function clearNewOrderDotInRow(pendingId) {
+            const row = document.querySelector('tr[data-pending-id="' + pendingId + '"]');
+            if (!row) return;
+            const dot = row.querySelector('.new-order-dot');
+            if (dot) dot.remove();
+        }
+
+        /** 待下单且本地未标记为已查看时显示红点 */
+        function shouldShowNewOrderDot(pendingId, auditStatus) {
+            if (auditStatus !== 0 || !pendingId) return false;
+            return !getViewedPendingIdSet().has(pendingId);
+        }
+
+        function getAuditFilters() {
+            const val = (id) => {
+                const el = document.getElementById(id);
+                return el && el.value ? el.value.trim() : '';
+            };
+            return {
+                status: val('filterStatus'),
+                groupToken: val('filterGroupToken'),
+                pendingId: val('filterPendingId'),
+                patientName: val('filterPatientName'),
+                patientPhone: val('filterPatientPhone'),
+                patientIdCard: val('filterPatientIdCard'),
+                groupName: val('filterGroupName'),
+                createDateStart: val('filterCreateDateStart'),
+                createDateEnd: val('filterCreateDateEnd'),
+                requestTriggerType: currentOrderTriggerType
+            };
+        }
+
+        function setAuditFilters(filters) {
+            if (!filters) return;
+            const set = (id, v) => {
+                const el = document.getElementById(id);
+                if (el) el.value = v || '';
+            };
+            set('filterStatus', filters.status);
+            set('filterGroupToken', filters.groupToken);
+            set('filterPendingId', filters.pendingId);
+            set('filterPatientName', filters.patientName);
+            set('filterPatientPhone', filters.patientPhone);
+            set('filterPatientIdCard', filters.patientIdCard);
+            set('filterGroupName', filters.groupName);
+            set('filterCreateDateStart', filters.createDateStart);
+            set('filterCreateDateEnd', filters.createDateEnd);
+            if (filters.requestTriggerType === 'idcard' || filters.requestTriggerType === 'phone') {
+                currentOrderTriggerType = filters.requestTriggerType;
+            }
+            applyOrderTabHighlightAndVisibility();
+        }
+
+        function updateFilterResultCount(orderCount) {
+            const el = document.getElementById('filterResultCount');
+            if (!el) return;
+            el.textContent = `筛选结果：${orderCount || 0}单`;
+        }
+
+        function resetFilters() {
+            setAuditFilters({
+                status: '', groupToken: '', pendingId: '', patientName: '', patientPhone: '', patientIdCard: '', groupName: '',
+                createDateStart: '', createDateEnd: '', requestTriggerType: currentOrderTriggerType
+            });
+            localStorage.removeItem(mcpAuditFiltersStorageKey(currentOrderTriggerType));
+            selectedOrderPendingIds.clear();
+            loadOrders();
+        }
+
+        function loadOrders() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('orderList').innerHTML = '<tr><td colspan="14" class="text-center text-muted">加载中...</td></tr>';
+            const filters = getAuditFilters();
+            localStorage.setItem(MCP_AUDIT_GROUP_TOKEN_KEY, filters.groupToken || '');
+            localStorage.setItem(mcpAuditFiltersStorageKey(currentOrderTriggerType), JSON.stringify(filters));
+            const qs = new URLSearchParams();
+            Object.entries(filters).forEach(([k, v]) => {
+                if (v) qs.set(k, v);
+            });
+            const listUrl = `${BASE_URL}/mcp/order-audit-list` + (qs.toString() ? '?' + qs.toString() : '');
+
+            fetch(listUrl, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            })
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    document.getElementById('loading').style.display = 'none';
+                    if (data && data.code === 0) {
+                        renderOrders(data.data || [], data.totalCount);
+                    } else {
+                        document.getElementById('orderList').innerHTML = 
+                            '<tr><td colspan="14" class="text-center text-danger">加载失败：' + (data?.msg || '未知错误') + '</td></tr>';
+                        updateFilterResultCount(0);
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('orderList').innerHTML = 
+                        '<tr><td colspan="14" class="text-center text-danger">加载失败：' + err.message + '</td></tr>';
+                    updateFilterResultCount(0);
+                });
+        }
+
+        function resetShipFilters() {
+            const ids = ['shipFilterStatus', 'shipFilterShipmentId', 'shipFilterPhone', 'shipFilterName', 'shipFilterDateStart', 'shipFilterDateEnd'];
+            ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            loadShipments();
+        }
+
+        function loadShipments() {
+            const qs = new URLSearchParams();
+            const stEl = document.getElementById('shipFilterStatus');
+            if (stEl && stEl.value !== '') qs.set('shipStatus', stEl.value);
+            const sid = (document.getElementById('shipFilterShipmentId') || {}).value;
+            if (sid && String(sid).trim()) qs.set('shipmentId', String(sid).trim());
+            const ph = (document.getElementById('shipFilterPhone') || {}).value;
+            if (ph && String(ph).trim()) qs.set('recipientPhone', String(ph).trim());
+            const nm = (document.getElementById('shipFilterName') || {}).value;
+            if (nm && String(nm).trim()) qs.set('nameKeyword', String(nm).trim());
+            const ds = (document.getElementById('shipFilterDateStart') || {}).value;
+            if (ds) qs.set('createDateStart', ds);
+            const de = (document.getElementById('shipFilterDateEnd') || {}).value;
+            if (de) qs.set('createDateEnd', de);
+            const elLoad = document.getElementById('shipLoading');
+            const tbody = document.getElementById('shipList');
+            const cntBadge = document.getElementById('shipFilterResultCount');
+            if (elLoad) elLoad.style.display = 'block';
+            const url = `${BASE_URL}/mcp/shipment-audit-list${qs.toString() ? '?' + qs.toString() : ''}`;
+            fetch(url, { headers: { 'Accept': 'application/json' } })
+                .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+                .then(data => {
+                    if (elLoad) elLoad.style.display = 'none';
+                    if (data && data.code === 0) {
+                        const rows = data.data || [];
+                        const total = Number.isFinite(Number(data.totalCount)) ? Number(data.totalCount) : rows.length;
+                        if (cntBadge) cntBadge.textContent = '共 ' + total + ' 条';
+                        renderShipments(rows);
+                    } else {
+                        if (cntBadge) cntBadge.textContent = '加载失败';
+                        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger">' + (data && data.msg ? data.msg : '加载失败') + '</td></tr>';
+                    }
+                })
+                .catch(e => {
+                    if (elLoad) elLoad.style.display = 'none';
+                    if (cntBadge) cntBadge.textContent = '加载失败';
+                    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger">' + e.message + '</td></tr>';
+                });
+        }
+
+        // 库存信息模块 JS 已移除
+
+        function renderShipments(rows) {
+            const tbody = document.getElementById('shipList');
+            if (!rows || !rows.length) {
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">暂无发货登记</td></tr>';
+                return;
+            }
+            let html = '';
+            rows.forEach(row => {
+                const sid = String(row.shipmentId || '');
+                const st = Number(row.shipStatus);
+                const stText = st === 1 ? '已发货' : '待发货';
+                const stCls = st === 1 ? 'status-approved' : 'status-pending';
+                const shipBtn = st === 1
+                    ? '<span class="text-muted">—</span>'
+                    : '<button type="button" class="btn btn-sm btn-success js-ship-btn" data-shipment-id="' + escapeHtml(sid) + '">发货</button>';
+                const ct = formatDateTime(row.createTime);
+                const stt = row.shipTime ? formatDateTime(row.shipTime) : '—';
+                html += '<tr>' +
+                    '<td class="small text-break">' + escapeHtml(sid) + '</td>' +
+                    '<td><span class="status-badge ' + stCls + '">' + stText + '</span></td>' +
+                    '<td>' + escapeHtml(row.recipientName || '') + '</td>' +
+                    '<td>' + escapeHtml(row.recipientPhone || '') + '</td>' +
+                    '<td class="small text-break">' + escapeHtml(row.address || '') + '</td>' +
+                    '<td class="small">' + escapeHtml(row.shipMethod || '') + '</td>' +
+                    '<td class="small text-break">' + escapeHtml(row.remark || '—') + '</td>' +
+                    '<td class="small">' + ct + '</td>' +
+                    '<td class="small">' + stt + '</td>' +
+                    '<td>' +
+                    '<button type="button" class="btn btn-sm btn-secondary me-1 js-ship-edit-btn" data-shipment-id="' + escapeHtml(sid) + '">编辑</button> ' +
+                    shipBtn +
+                    '</td>' +
+                    '</tr>';
+            });
+            tbody.innerHTML = html;
+            tbody.querySelectorAll('.js-ship-edit-btn').forEach(btn => {
+                btn.onclick = function () {
+                    openShipEditModal(btn.getAttribute('data-shipment-id') || '');
+                };
+            });
+            tbody.querySelectorAll('.js-ship-btn').forEach(btn => {
+                btn.onclick = function () {
+                    markShipmentShipped(btn.getAttribute('data-shipment-id') || '');
+                };
+            });
+        }
+
+        function openManualAddOrderModal() {
+            const isIdcard = currentOrderTriggerType === 'idcard';
+            const title = document.getElementById('manualAddOrderModalLabel');
+            if (title) title.textContent = isIdcard ? '手动新增订单（身份证板块）' : '手动新增订单';
+            const phoneLabel = document.getElementById('manualPhoneLabel');
+            if (phoneLabel) phoneLabel.textContent = isIdcard ? '手机号（可选）' : '手机号';
+            const idLabel = document.getElementById('manualIdCardLabel');
+            if (idLabel) idLabel.textContent = isIdcard ? '身份证号（建议必填）' : '身份证号（可选）';
+            const groupWrap = document.getElementById('manualGroupNameWrap');
+            if (groupWrap) groupWrap.style.display = isIdcard ? 'none' : '';
+
+            ['manualPatientName', 'manualPatientPhone', 'manualPatientIdCard', 'manualGroupName', 'manualOrderRemark', 'manualOrderStoreId']
+                .forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+            fillPatientEducationSelect(document.getElementById('manualPatientEducation'), '');
+            const list = document.getElementById('manualDrugList');
+            if (list) list.innerHTML = '<div class="text-muted small">不填药品也可以先创建，后续在列表“编辑”里补充。</div>';
+
+            const modal = new bootstrap.Modal(document.getElementById('manualAddOrderModal'));
+            modal.show();
+        }
+
+        function manualAddDrugRow() {
+            const container = document.getElementById('manualDrugList');
+            if (!container) return;
+            const idx = container.querySelectorAll('.manual-drug-row').length;
+            const row = document.createElement('div');
+            row.className = 'manual-drug-row border rounded p-2 mt-2';
+            row.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-semibold small">药品 ${idx + 1}</div>
+                    <button type="button" class="btn btn-sm btn-outline-danger">删除</button>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <label class="form-label small">药品名称</label>
+                        <input type="text" class="form-control form-control-sm" data-field="drugName" placeholder="可选">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">数量</label>
+                        <input type="number" class="form-control form-control-sm" data-field="qty" value="1" min="1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">规格</label>
+                        <input type="text" class="form-control form-control-sm" data-field="spec" placeholder="可选">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">商品ID</label>
+                        <input type="text" class="form-control form-control-sm" data-field="wareId" placeholder="可选">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">条码</label>
+                        <input type="text" class="form-control form-control-sm" data-field="barCode" placeholder="可选">
+                    </div>
+                </div>
+            `;
+            row.querySelector('button').onclick = function () { row.remove(); };
+            container.appendChild(row);
+        }
+
+        function submitManualAddOrder() {
+            const isIdcard = currentOrderTriggerType === 'idcard';
+            const patientName = (document.getElementById('manualPatientName') || {}).value || '';
+            const patientPhone = (document.getElementById('manualPatientPhone') || {}).value || '';
+            const patientIdCard = (document.getElementById('manualPatientIdCard') || {}).value || '';
+            const groupName = (document.getElementById('manualGroupName') || {}).value || '';
+            const patientEducation = (document.getElementById('manualPatientEducation') || {}).value || '';
+            const orderRemark = (document.getElementById('manualOrderRemark') || {}).value || '';
+            const manualOrderStoreId = ((document.getElementById('manualOrderStoreId') || {}).value || '').trim();
+            const effectiveStoreId = manualOrderStoreId || (typeof MCP_AUDIT_STORE_ID !== 'undefined' && MCP_AUDIT_STORE_ID ? String(MCP_AUDIT_STORE_ID).trim() : '');
+
+            const keyOk = (patientPhone.trim() || patientIdCard.trim() || patientName.trim() || orderRemark.trim());
+            if (!keyOk) {
+                alert('请至少填写：手机号/身份证/姓名/备注 其中一项');
+                return;
+            }
+
+            const items = [];
+            document.querySelectorAll('#manualDrugList .manual-drug-row').forEach(function (row) {
+                const get = (f) => (row.querySelector('[data-field="' + f + '"]') || {}).value || '';
+                const drugName = String(get('drugName') || '').trim();
+                const spec = String(get('spec') || '').trim();
+                const qty = parseInt(get('qty'), 10) || 1;
+                const wareId = String(get('wareId') || '').trim();
+                const barCode = String(get('barCode') || '').trim();
+                if (!drugName && !spec && !wareId && !barCode) return;
+                items.push({ drugName, spec, qty, wareId, barCode });
+            });
+
+            const payload = {
+                requestTriggerType: isIdcard ? 'idcard' : 'phone',
+                patientName: patientName.trim(),
+                patientPhone: patientPhone.trim(),
+                patientIdCard: patientIdCard.trim(),
+                patientEducation: (patientEducation || '').trim(),
+                items: items
+            };
+            // 后端 createOrder 强制仅支持 chatInfo 风格入参（禁用 groupName/orderRemark/userGroupNickname 等顶层字段）
+            // 群名与备注放到 chatInfo 内，避免 400：仅支持 chatInfo 结构传参
+            if (!isIdcard && (groupName.trim() || orderRemark.trim() || effectiveStoreId)) {
+                payload.chatInfo = {
+                    roomName: groupName.trim(),
+                    remark: (orderRemark || '').trim(),
+                    storeId: effectiveStoreId || ''
+                };
+            } else if (isIdcard && (orderRemark.trim() || effectiveStoreId)) {
+                payload.chatInfo = {
+                    roomName: '',
+                    remark: (orderRemark || '').trim(),
+                    storeId: effectiveStoreId || ''
+                };
+            }
+
+            fetch(`${BASE_URL}/mcp/core_order_create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+                .then(data => {
+                    if (data && data.code === 0) {
+                        alert('创建成功');
+                        const modalEl = document.getElementById('manualAddOrderModal');
+                        const modal = bootstrap.Modal.getInstance(modalEl);
+                        if (modal) modal.hide();
+                        loadOrders();
+                    } else {
+                        alert('创建失败：' + (data && data.msg ? data.msg : '未知错误'));
+                    }
+                })
+                .catch(e => alert('创建失败：' + (e.message || e)));
+        }
+
+        function openManualAddShipmentModal() {
+            ['manualShipName', 'manualShipPhone', 'manualShipMethod', 'manualShipRemark', 'manualShipAddress']
+                .forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+            const modal = new bootstrap.Modal(document.getElementById('manualAddShipmentModal'));
+            modal.show();
+        }
+
+        function submitManualAddShipment() {
+            const name = (document.getElementById('manualShipName') || {}).value || '';
+            const phone = (document.getElementById('manualShipPhone') || {}).value || '';
+            const method = (document.getElementById('manualShipMethod') || {}).value || '';
+            const remark = (document.getElementById('manualShipRemark') || {}).value || '';
+            const address = (document.getElementById('manualShipAddress') || {}).value || '';
+            if (!name.trim() || !phone.trim() || !method.trim() || !address.trim()) {
+                alert('请把必填项填完整：姓名/电话/邮寄方式/地址');
+                return;
+            }
+            const payload = {
+                recipientName: name.trim(),
+                recipientPhone: phone.trim(),
+                shipMethod: method.trim(),
+                address: address.trim(),
+                remark: remark.trim()
+            };
+            fetch(`${BASE_URL}/mcp/core_shipment_create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+                .then(data => {
+                    if (data && data.code === 0) {
+                        alert('创建成功');
+                        const modalEl = document.getElementById('manualAddShipmentModal');
+                        const modal = bootstrap.Modal.getInstance(modalEl);
+                        if (modal) modal.hide();
+                        loadShipments();
+                    } else {
+                        alert('创建失败：' + (data && data.msg ? data.msg : '未知错误'));
+                    }
+                })
+                .catch(e => alert('创建失败：' + (e.message || e)));
+        }
+
+        function startShipmentPolling() {
+            if (shipmentPollTimer) return;
+            shipmentPollTimer = setInterval(function () {
+                const shipPane = document.getElementById('mcp-pane-shipment');
+                if (shipPane && shipPane.classList.contains('active')) {
+                    loadShipments();
+                }
+            }, 10000);
+        }
+
+        function stopShipmentPolling() {
+            if (!shipmentPollTimer) return;
+            clearInterval(shipmentPollTimer);
+            shipmentPollTimer = null;
+        }
+
+        function openShipEditModal(shipmentId) {
+            fetch(`${BASE_URL}/mcp/shipment-audit-list?shipmentId=` + encodeURIComponent(shipmentId))
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.code !== 0 || !data.data || !data.data.length) {
+                        alert('未找到该发货单');
+                        return;
+                    }
+                    const row = data.data.find(x => String(x.shipmentId || '') === String(shipmentId)) || data.data[0];
+                    document.getElementById('shipEditShipmentId').value = row.shipmentId || '';
+                    document.getElementById('shipEditName').value = row.recipientName || '';
+                    document.getElementById('shipEditPhone').value = row.recipientPhone || '';
+                    document.getElementById('shipEditAddress').value = row.address || '';
+                    document.getElementById('shipEditMethod').value = row.shipMethod || '';
+                    document.getElementById('shipEditRemark').value = row.remark || '';
+                    if (typeof bootstrap !== 'undefined') {
+                        bootstrap.Modal.getOrCreateInstance(document.getElementById('shipEditModal')).show();
+                    }
+                })
+                .catch(e => alert('加载失败：' + e.message));
+        }
+
+        function saveShipEdit() {
+            const shipmentId = document.getElementById('shipEditShipmentId').value;
+            const body = {
+                shipmentId,
+                recipientName: document.getElementById('shipEditName').value.trim(),
+                recipientPhone: document.getElementById('shipEditPhone').value.trim(),
+                address: document.getElementById('shipEditAddress').value.trim(),
+                shipMethod: document.getElementById('shipEditMethod').value.trim(),
+                remark: document.getElementById('shipEditRemark').value.trim()
+            };
+            if (!body.recipientName || !body.recipientPhone || !body.address || !body.shipMethod) {
+                alert('姓名、电话、地址、邮寄方式均不能为空');
+                return;
+            }
+            fetch(`${BASE_URL}/mcp/shipment-audit-update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(body)
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.code === 0) {
+                        const m = bootstrap.Modal.getInstance(document.getElementById('shipEditModal'));
+                        if (m) m.hide();
+                        loadShipments();
+                    } else {
+                        alert('保存失败：' + (data && data.msg ? data.msg : '未知错误'));
+                    }
+                })
+                .catch(e => alert('保存失败：' + e.message));
+        }
+
+        function markShipmentShipped(shipmentId) {
+            if (!confirm('确认将该发货单标记为「已发货」？')) return;
+            fetch(`${BASE_URL}/mcp/shipment-audit-ship`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ shipmentId })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data && data.code === 0) {
+                        loadShipments();
+                    } else {
+                        alert(data && data.msg ? data.msg : '操作失败');
+                    }
+                })
+                .catch(e => alert(e.message));
+        }
+
+        function loadGroupTokenOptions() {
+            const selectEl = document.getElementById('filterGroupToken');
+            if (!selectEl) return Promise.resolve();
+            const remembered = localStorage.getItem(MCP_AUDIT_GROUP_TOKEN_KEY) || '';
+
+            return fetch(`${BASE_URL}/mcp/group-token-options`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            })
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    const options = data && data.code === 0 && Array.isArray(data.data) ? data.data : [];
+                    let html = '<option value="">全部</option>';
+                    options.forEach(item => {
+                        const token = item && item.token ? String(item.token) : '';
+                        if (!token) return;
+                        const usage = Number(item.usageCount || 0);
+                        html += `<option value="${escapeHtml(token)}">${escapeHtml(token)} (${usage})</option>`;
+                    });
+                    selectEl.innerHTML = html;
+                    let savedRaw = localStorage.getItem(mcpAuditFiltersStorageKey(currentOrderTriggerType));
+                    let restoredFromLegacy = false;
+                    if (!savedRaw && currentOrderTriggerType === 'phone') {
+                        savedRaw = localStorage.getItem(MCP_AUDIT_FILTERS_KEY_LEGACY);
+                        restoredFromLegacy = !!savedRaw;
+                    }
+                    if (savedRaw) {
+                        try {
+                            const saved = JSON.parse(savedRaw);
+                            // 旧版统一存储里若保存了「身份证 + 已下单」，新建接口单（待下单）会被滤掉；首次恢复时改为全部状态
+                            if (restoredFromLegacy && saved && saved.requestTriggerType === 'idcard' && String(saved.status) === '1') {
+                                saved.status = '';
+                            }
+                            setAuditFilters(saved);
+                        } catch (e) {
+                            selectEl.value = remembered;
+                        }
+                    } else {
+                        selectEl.value = remembered;
+                    }
+                    ['filterStatus', 'filterPendingId', 'filterPatientName', 'filterPatientPhone', 'filterPatientIdCard',
+                        'filterGroupName', 'filterGroupToken', 'filterCreateDateStart', 'filterCreateDateEnd'
+                    ].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (!el) return;
+                        el.onchange = () => loadOrders();
+                        if (el.tagName === 'INPUT') {
+                            el.onkeydown = (ev) => { if (ev.key === 'Enter') loadOrders(); };
+                        }
+                    });
+                })
+                .catch(err => {
+                    console.warn('加载群分词选项失败', err);
+                    selectEl.innerHTML = '<option value="">全部</option>';
+                    selectEl.onchange = () => loadOrders();
+                });
+        }
+
+        function loadPatientEducationOptions() {
+            return fetch(`${BASE_URL}/mcp/patient-education-options`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            })
+                .then(res => res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status)))
+                .then(data => {
+                    if (data && data.code === 0 && Array.isArray(data.data)) {
+                        patientEducationOptions = data.data;
+                        return;
+                    }
+                    patientEducationOptions = [];
+                    console.warn('加载患教选项失败：', data && data.msg ? data.msg : '未知错误');
+                })
+                .catch(err => {
+                    patientEducationOptions = [];
+                    console.warn('加载患教选项异常：', err);
+                });
+        }
+
+        function renderOrders(orders, totalCount) {
+            const container = document.getElementById('orderList');
+            if (!orders || orders.length === 0) {
+                container.innerHTML = '<tr><td colspan="14" class="text-center text-muted">暂无数据</td></tr>';
+                updateFilterResultCount(totalCount || 0);
+                return;
+            }
+
+            // 按pending_id分组
+            const orderMap = new Map();
+            orders.forEach(order => {
+                const pendingId = order.pending_id || order.pendingId || '';
+                if (!pendingId) return;
+                
+                if (!orderMap.has(pendingId)) {
+                    orderMap.set(pendingId, {
+                        order: {
+                            id: order.id,
+                            pending_id: pendingId,
+                            order_id: order.order_id || order.orderId || '',
+                            audit_status: order.audit_status !== undefined ? order.audit_status : (order.auditStatus !== undefined ? order.auditStatus : 0),
+                            audit_time: order.audit_time || order.auditTime || null,
+                            audit_remark: order.audit_remark || order.auditRemark || null,
+                            create_time: order.create_time || order.createTime || '',
+                            patient_name: order.patient_name || order.patientName || '',
+                            patient_phone: order.patient_phone || order.patientPhone || '',
+                            patient_id_card: order.patient_id_card || order.patientIdCard || '',
+                            patient_education: order.patient_education || order.patientEducation || '',
+                            group_name: order.group_name || order.groupName || '',
+                            store_ids: order.store_ids || order.storeIds || '',
+                            request_trigger_type: order.request_trigger_type || order.requestTriggerType || '',
+                            order_remark: order.order_remark || order.orderRemark || '',
+                            user_group_nickname: order.user_group_nickname || order.userGroupNickname || ''
+                        },
+                        drugs: []
+                    });
+                }
+                
+                const drugNameRaw = order.drug_name || order.drugName;
+                const drugName = (drugNameRaw === null || drugNameRaw === undefined) ? '' : String(drugNameRaw).trim();
+                // 兼容后端/数据源把空药品名写成 "-" / "null" 等占位值：视为无药品
+                const hasEffectiveDrugName = !!drugName && drugName !== '-' && drugName.toLowerCase() !== 'null';
+                if (hasEffectiveDrugName) {
+                    orderMap.get(pendingId).drugs.push({
+                        name: drugName,
+                        spec: order.spec || '',
+                        qty: order.qty || 1,
+                        ware_id: order.ware_id || order.wareId || '',
+                        bar_code: order.bar_code || order.barCode || ''
+                    });
+                }
+            });
+
+            // 保存到全局变量
+            orderDataMap = orderMap;
+
+            let html = '';
+            orderMap.forEach((value, pendingId) => {
+                const order = value.order;
+                const drugs = value.drugs;
+                const auditStatus = order.audit_status;
+                const statusText = formatOrderAuditStatusText(auditStatus);
+                const statusClass = formatOrderAuditStatusClass(auditStatus);
+                
+                // 格式化时间
+                const createTime = formatDateTime(order.create_time);
+
+                const showDot = shouldShowNewOrderDot(pendingId, auditStatus);
+                const canStore = (currentOrderTriggerType === 'idcard') ? true : canEditOrderByGroupName(order.group_name || '');
+                const ro = canStore ? '' : ' readonly';
+                const storeDisplay = order.store_ids || (storeIdsFromGroupNameText(order.group_name || '').join(','));
+                const patientEducationCell = buildPatientEducationSelectHtml(pendingId, order.patient_education || '', !canStore);
+                const checked = selectedOrderPendingIds.has(pendingId) ? ' checked' : '';
+                html += `
+                    <tr data-pending-id="${pendingId}">
+                        <td class="text-center align-middle">
+                            <input type="checkbox" class="order-row-select" data-pending-id="${pendingId}"${checked}>
+                        </td>
+                        <td>
+                            <span class="pending-id-cell">
+                                ${showDot ? '<span class="new-order-dot" title="未查看药品信息"></span>' : ''}
+                                <span class="pending-id-text">${pendingId}</span>
+                            </span>
+                        </td>
+                        <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                        <td>
+                            <input type="text" class="editable-field" 
+                                   data-field="patient_name" 
+                                   data-pending-id="${pendingId}"
+                                   value="${escapeHtml(order.patient_name)}" 
+                                   placeholder="患者姓名"${ro}>
+                        </td>
+                        <td class="trigger-phone-only">
+                            <input type="text" class="editable-field" 
+                                   data-field="patient_phone" 
+                                   data-pending-id="${pendingId}"
+                                   value="${escapeHtml(order.patient_phone)}" 
+                                   placeholder="手机号"${ro}>
+                        </td>
+                        <td class="trigger-idcard-only">
+                            <input type="text" class="editable-field" 
+                                   data-field="patient_id_card" 
+                                   data-pending-id="${pendingId}"
+                                   value="${escapeHtml(order.patient_id_card)}" 
+                                   placeholder="身份证"${ro}>
+                        </td>
+                        <td class="small text-break trigger-phone-only">${escapeHtml(order.group_name || '-')}</td>
+                        <td class="small text-break">${escapeHtml(storeDisplay || '-')}</td>
+                        <td class="small">${patientEducationCell}</td>
+                        <td class="small text-break">${escapeHtml(order.order_remark || '-')}</td>
+                        <td class="small text-break">${escapeHtml(order.user_group_nickname || '-')}</td>
+                        <td>${createTime}</td>
+                        <td style="position: relative; overflow: visible;">
+                            ${drugs.length > 0 ? 
+                                `<a href="javascript:void(0)" class="expand-btn" data-pending-id="${pendingId}">查看(${drugs.length})</a>
+                                 <div id="drug-details-${pendingId}" class="drug-details">
+                                     ${drugs.map((drug, idx) => `
+                                         <div class="drug-item">
+                                             <strong>${escapeHtml(drug.name || '-')}</strong>
+                                             ${drug.spec ? ' 规格：' + escapeHtml(drug.spec) : ''}
+                                             数量：${drug.qty || 1}
+                                             ${drug.ware_id ? ' 商品ID：' + escapeHtml(drug.ware_id) : ''}
+                                             ${drug.bar_code ? ' 条码：' + escapeHtml(drug.bar_code) : ''}
+                                         </div>
+                                     `).join('')}
+                                 </div>` : 
+                                '<span class="text-muted">-</span>'}
+                        </td>
+                        <td>
+                            ${canStore
+                                ? `<button type="button" class="btn btn-sm btn-secondary me-1" onclick="openEditModal('${pendingId}')">编辑</button>`
+                                : `<button type="button" class="btn btn-sm btn-secondary me-1" disabled title="当前登录门店不在群名称后缀门店列表中">编辑</button>`}
+                            ${auditStatus === 0 ?
+                                (canStore
+                                    ? `<button type="button" class="btn btn-sm btn-primary" onclick="submitOrder('${pendingId}')">下单</button>`
+                                    : `<button type="button" class="btn btn-sm btn-secondary" onclick="submitOrder('${pendingId}')" title="当前登录门店不在群名称后缀门店列表中">下单</button>`) :
+                                '<span class="text-muted">已处理</span>'}
+                        </td>
+                    </tr>
+                `;
+            });
+            container.innerHTML = html;
+            const selAll = document.getElementById('orderSelectAll');
+            const rowChecks = container.querySelectorAll('.order-row-select');
+            const refreshSelectAllState = function () {
+                if (!selAll) return;
+                if (!rowChecks.length) {
+                    selAll.checked = false;
+                    selAll.indeterminate = false;
+                    return;
+                }
+                const checkedCount = Array.from(rowChecks).filter(ch => ch.checked).length;
+                selAll.checked = checkedCount > 0 && checkedCount === rowChecks.length;
+                selAll.indeterminate = checkedCount > 0 && checkedCount < rowChecks.length;
+            };
+            rowChecks.forEach(ch => {
+                ch.addEventListener('change', function () {
+                    const pid = ch.getAttribute('data-pending-id') || '';
+                    if (!pid) return;
+                    if (ch.checked) {
+                        selectedOrderPendingIds.add(pid);
+                    } else {
+                        selectedOrderPendingIds.delete(pid);
+                    }
+                    refreshSelectAllState();
+                });
+            });
+            if (selAll) {
+                selAll.onchange = function () {
+                    rowChecks.forEach(ch => {
+                        ch.checked = !!selAll.checked;
+                        const pid = ch.getAttribute('data-pending-id') || '';
+                        if (!pid) return;
+                        if (selAll.checked) selectedOrderPendingIds.add(pid);
+                        else selectedOrderPendingIds.delete(pid);
+                    });
+                    refreshSelectAllState();
+                };
+            }
+            refreshSelectAllState();
+            const orderCount = Number.isFinite(totalCount) ? totalCount : orderMap.size;
+            updateFilterResultCount(orderCount);
+            container.querySelectorAll('.patient-education-select').forEach(function (el) {
+                el.addEventListener('change', function () {
+                    const pid = el.getAttribute('data-pending-id') || '';
+                    onPatientEducationChange(pid, el.value || '');
+                });
+            });
+            applyOrderTriggerVisibility();
+            
+            // 确保所有药品详情初始状态都是隐藏的
+            document.querySelectorAll('.drug-details').forEach(el => {
+                el.classList.remove('show');
+            });
+        }
+
+        function toggleDrugDetails(pendingId, linkElement) {
+            console.log('toggleDrugDetails called:', pendingId);
+            const details = document.getElementById('drug-details-' + pendingId);
+            if (!details) {
+                console.warn('未找到药品详情元素:', pendingId);
+                return;
+            }
+            
+            const isShowing = details.classList.contains('show');
+            console.log('当前状态 - isShowing:', isShowing);
+            
+            // 先隐藏所有其他展开的药品信息
+            document.querySelectorAll('.drug-details.show').forEach(el => {
+                if (el.id !== 'drug-details-' + pendingId) {
+                    el.classList.remove('show');
+                    // 恢复其他链接文本
+                    const otherPendingId = el.id.replace('drug-details-', '');
+                    const otherLink = document.querySelector(`a.expand-btn[data-pending-id="${otherPendingId}"]`);
+                    if (otherLink) {
+                        const otherOrderData = orderDataMap.get(otherPendingId);
+                        if (otherOrderData) {
+                            otherLink.textContent = '查看(' + otherOrderData.drugs.length + ')';
+                        }
+                    }
+                }
+            });
+            
+            // 切换当前项
+            details.classList.toggle('show');
+            const nowShowing = details.classList.contains('show');
+            console.log('切换后状态 - nowShowing:', nowShowing);
+            console.log('元素样式:', window.getComputedStyle(details).display);
+
+            if (nowShowing) {
+                markPendingOrderViewed(pendingId);
+            }
+            
+            // 更新链接文本
+            if (linkElement) {
+                const orderData = orderDataMap.get(pendingId);
+                const drugCount = orderData ? orderData.drugs.length : details.querySelectorAll('.drug-item').length;
+                linkElement.textContent = nowShowing ? '收起' : '查看(' + drugCount + ')';
+            }
+        }
+
+        // 使用事件委托处理展开按钮点击
+        document.addEventListener('click', function(e) {
+            console.log('点击事件:', e.target, e.target.classList);
+            
+            // 如果点击的是展开按钮
+            if (e.target.classList.contains('expand-btn')) {
+                e.preventDefault();
+                e.stopPropagation();
+                const pendingId = e.target.getAttribute('data-pending-id');
+                console.log('点击展开按钮, pendingId:', pendingId);
+                if (pendingId) {
+                    toggleDrugDetails(pendingId, e.target);
+                }
+                return false;
+            }
+            
+            // 如果点击的是药品详情区域，不关闭
+            if (e.target.closest('.drug-details')) {
+                e.stopPropagation();
+                return;
+            }
+            
+            // 点击页面其他地方时关闭展开的药品信息
+            document.querySelectorAll('.drug-details.show').forEach(el => {
+                el.classList.remove('show');
+                const pendingId = el.id.replace('drug-details-', '');
+                const link = document.querySelector(`a.expand-btn[data-pending-id="${pendingId}"]`);
+                if (link) {
+                    const orderData = orderDataMap.get(pendingId);
+                    if (orderData) {
+                        link.textContent = '查看(' + orderData.drugs.length + ')';
+                    }
+                }
+            });
+        });
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDateTime(dateTimeStr) {
+            if (!dateTimeStr) return '-';
+            try {
+                const date = new Date(dateTimeStr);
+                return date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+            } catch (e) {
+                return dateTimeStr;
+            }
+        }
+
+        function submitOrder(pendingId) {
+            const orderData = orderDataMap.get(pendingId);
+            // 身份证触发=私聊单：门店权限由后端按 storeId 校验；不再依赖群名称后缀
+            if (currentOrderTriggerType !== 'idcard' && orderData && !canEditOrderByGroupName(orderData.order.group_name)) {
+                alert('当前登录门店与群名称后缀首个门店编号不一致，无法下单。请重新登录并选择对应门店。');
+                return;
+            }
+            // 获取当前编辑的值
+            const row = document.querySelector(`tr[data-pending-id="${pendingId}"]`);
+            if (!row) {
+                console.error('未找到订单数据');
+                return;
+            }
+            const patientName = row.querySelector('input[data-field="patient_name"]')?.value || '';
+            const patientPhone = row.querySelector('input[data-field="patient_phone"]')?.value || '';
+            const patientIdCard = row.querySelector('input[data-field="patient_id_card"]')?.value || '';
+            const patientEducation = row.querySelector('select.patient-education-select')?.value || orderData?.order?.patient_education || '';
+
+            if (!orderData) {
+                console.error('订单数据不存在');
+                return;
+            }
+            const submitBtn = row.querySelector('button.btn-primary');
+            const originalBtnText = submitBtn ? submitBtn.textContent : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '下单中...';
+            }
+
+            // 构建请求数据（使用修改后的值）
+            const requestData = {
+                patientName: patientName.trim() || orderData.order.patient_name,
+                patientPhone: patientPhone.trim() || orderData.order.patient_phone,
+                patientIdCard: patientIdCard.trim() || orderData.order.patient_id_card,
+                patientEducation: patientEducation,
+                requestTriggerType: orderData.order.request_trigger_type || currentOrderTriggerType,
+                groupName: (currentOrderTriggerType === 'idcard') ? '' : (orderData.order.group_name || ''),
+                orderRemark: orderData.order.order_remark || '',
+                userGroupNickname: orderData.order.user_group_nickname || '',
+                items: (orderData.drugs && orderData.drugs.length > 0) ? orderData.drugs.map(drug => ({
+                    drugName: drug.name,
+                    spec: drug.spec,
+                    qty: drug.qty,
+                    wareId: drug.ware_id,
+                    barCode: drug.bar_code
+                })) : []
+            };
+
+            // 先更新表A中的user_request_data（保存修改后的数据）
+            fetch(`${BASE_URL}/mcp/order-audit-update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pendingId: pendingId,
+                    userRequestData: requestData
+                })
+            })
+            .then(res => res.json())
+            .then(updateResult => {
+                if (updateResult.code !== 0) {
+                    throw new Error('保存修改失败：' + updateResult.msg);
+                }
+                // 然后调用审核通过接口（下单）
+                return fetch(`${BASE_URL}/mcp/core_order_approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        pendingId: pendingId, 
+                        auditRemark: '页面下单' 
+                    })
+                });
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.code === 0) {
+                    loadOrders();
+                } else {
+                    alert('下单失败：' + (data.msg || '未知错误'));
+                }
+            })
+            .catch(err => {
+                alert('操作失败：' + err.message);
+            })
+            .finally(() => {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText || '下单';
+                }
+            });
+        }
+
+        // 打开编辑模态框
+        function openEditModal(pendingId) {
+            const orderData = orderDataMap.get(pendingId);
+            if (!orderData) {
+                alert('订单数据不存在');
+                return;
+            }
+            if (currentOrderTriggerType !== 'idcard' && !canEditOrderByGroupName(orderData.order.group_name)) {
+                alert('当前登录门店与群名称后缀首个门店编号不一致，无法编辑。请重新登录并选择对应门店。');
+                return;
+            }
+
+            const order = orderData.order;
+            const drugs = orderData.drugs;
+            // 无「查看」入口时，打开编辑视为已查看，避免红点一直存在
+            if (!drugs || drugs.length === 0) {
+                markPendingOrderViewed(pendingId);
+            }
+
+            // 填充表单数据
+            document.getElementById('editPendingId').value = pendingId;
+            document.getElementById('editOrderId').value = pendingId;
+            document.getElementById('editPatientName').value = order.patient_name || '';
+            document.getElementById('editPatientPhone').value = order.patient_phone || '';
+            document.getElementById('editPatientIdCard').value = order.patient_id_card || '';
+            const rowSel = document.querySelector(`tr[data-pending-id="${pendingId}"] select.patient-education-select`);
+            if (rowSel && rowSel.value !== undefined) {
+                order.patient_education = rowSel.value || order.patient_education || '';
+            }
+            fillPatientEducationSelect(document.getElementById('editPatientEducation'), order.patient_education || '');
+
+            // 渲染药品列表
+            renderDrugList(drugs);
+
+            // 显示模态框
+            const modal = new bootstrap.Modal(document.getElementById('editModal'));
+            modal.show();
+        }
+
+        // 渲染药品列表
+        function renderDrugList(drugs) {
+            const container = document.getElementById('editDrugList');
+            if (!drugs || drugs.length === 0) {
+                container.innerHTML = '<p class="text-muted">暂无药品信息</p>';
+                return;
+            }
+
+            let html = '<div class="drug-edit-list">';
+            drugs.forEach((drug, index) => {
+                html += `
+                    <div class="drug-edit-item border-bottom pb-3 mb-3" data-index="${index}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong>药品 ${index + 1}</strong>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeDrugItem(${index})">删除</button>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label small">药品名称 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" name="drugName" value="${escapeHtml(drug.name || '')}">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label small">规格</label>
+                                <input type="text" class="form-control form-control-sm" name="spec" value="${escapeHtml(drug.spec || '')}">
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label class="form-label small">数量 <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control form-control-sm" name="qty" value="${drug.qty || 1}" min="1" required>
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label class="form-label small">商品ID</label>
+                                <input type="text" class="form-control form-control-sm" name="wareId" value="${escapeHtml(drug.ware_id || '')}">
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label class="form-label small">条码</label>
+                                <input type="text" class="form-control form-control-sm" name="barCode" value="${escapeHtml(drug.bar_code || '')}">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // 添加药品项
+        function addDrugItem() {
+            const container = document.getElementById('editDrugList');
+            const existingItems = container.querySelectorAll('.drug-edit-item');
+            const newIndex = existingItems.length;
+
+            const newItem = document.createElement('div');
+            newItem.className = 'drug-edit-item border-bottom pb-3 mb-3';
+            newItem.setAttribute('data-index', newIndex);
+            newItem.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <strong>药品 ${newIndex + 1}</strong>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeDrugItem(${newIndex})">删除</button>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">药品名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm" name="drugName">
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label small">规格</label>
+                        <input type="text" class="form-control form-control-sm" name="spec">
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">数量 <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control form-control-sm" name="qty" value="1" min="1" required>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">商品ID</label>
+                        <input type="text" class="form-control form-control-sm" name="wareId">
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label small">条码</label>
+                        <input type="text" class="form-control form-control-sm" name="barCode">
+                    </div>
+                </div>
+            `;
+
+            if (container.querySelector('.drug-edit-list')) {
+                container.querySelector('.drug-edit-list').appendChild(newItem);
+            } else {
+                container.innerHTML = '<div class="drug-edit-list">' + newItem.outerHTML + '</div>';
+            }
+
+            // 更新索引
+            updateDrugIndices();
+        }
+
+        // 删除药品项
+        function removeDrugItem(index) {
+            const container = document.getElementById('editDrugList');
+            const item = container.querySelector(`.drug-edit-item[data-index="${index}"]`);
+            if (item) {
+                item.remove();
+                updateDrugIndices();
+            }
+        }
+
+        // 更新药品索引
+        function updateDrugIndices() {
+            const container = document.getElementById('editDrugList');
+            const items = container.querySelectorAll('.drug-edit-item');
+            items.forEach((item, newIndex) => {
+                item.setAttribute('data-index', newIndex);
+                item.querySelector('strong').textContent = `药品 ${newIndex + 1}`;
+                const removeBtn = item.querySelector('button');
+                removeBtn.setAttribute('onclick', `removeDrugItem(${newIndex})`);
+            });
+        }
+
+        // 保存编辑
+        function saveEdit() {
+            const form = document.getElementById('editForm');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const pendingId = document.getElementById('editPendingId').value;
+            const od = orderDataMap.get(pendingId);
+            if (od && !canEditOrderByGroupName(od.order.group_name)) {
+                alert('当前登录门店无权保存该订单。');
+                return;
+            }
+            const patientName = document.getElementById('editPatientName').value.trim();
+            const patientPhone = document.getElementById('editPatientPhone').value.trim();
+            const patientIdCard = document.getElementById('editPatientIdCard').value.trim();
+            const patientEducation = (document.getElementById('editPatientEducation').value || '').trim();
+
+            // 收集药品信息
+            const drugItems = document.querySelectorAll('#editDrugList .drug-edit-item');
+            const drugs = [];
+            let hasError = false;
+
+            drugItems.forEach((item, index) => {
+                const drugName = item.querySelector('input[name="drugName"]').value.trim();
+                const spec = item.querySelector('input[name="spec"]').value.trim();
+                const qty = parseInt(item.querySelector('input[name="qty"]').value) || 1;
+                const wareId = item.querySelector('input[name="wareId"]').value.trim();
+                const barCode = item.querySelector('input[name="barCode"]').value.trim();
+
+                // 整行都为空则忽略。
+                if (!drugName && !spec && !wareId && !barCode) {
+                    return;
+                }
+
+                drugs.push({
+                    drugName: drugName,
+                    spec: spec,
+                    qty: qty,
+                    wareId: wareId,
+                    barCode: barCode
+                });
+            });
+
+            if (hasError) {
+                return;
+            }
+
+            // 允许无药品信息下单：items 为空时也提交审核通过（后端会决定是否走小程序接口）
+
+            // 构建请求数据
+            const requestData = {
+                patientName: patientName,
+                patientPhone: patientPhone,
+                patientIdCard: patientIdCard,
+                patientEducation: patientEducation,
+                requestTriggerType: od && od.order ? (od.order.request_trigger_type || currentOrderTriggerType) : currentOrderTriggerType,
+                groupName: (currentOrderTriggerType === 'idcard') ? '' : (od && od.order ? (od.order.group_name || '') : ''),
+                orderRemark: od && od.order ? (od.order.order_remark || '') : '',
+                userGroupNickname: od && od.order ? (od.order.user_group_nickname || '') : '',
+                items: drugs
+            };
+
+            // 调用更新API
+            fetch(`${BASE_URL}/mcp/order-audit-update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pendingId: pendingId,
+                    userRequestData: requestData
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.code === 0) {
+                    playMcpOrderNotifySound('save');
+                    alert('保存成功！');
+                    // 关闭模态框
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
+                    modal.hide();
+                    // 刷新列表
+                    loadOrders();
+                } else {
+                    alert('保存失败：' + data.msg);
+                }
+            })
+            .catch(err => {
+                alert('保存失败：' + err.message);
+            });
+        }
+
+        let stompClient = null;
+        let wsReconnectDelayMs = 3000;
+
+        /**
+         * MCP 审核页提示音：
+         * - 若 application.yml 中 mcp.order-audit.sound-*-url 已配置，则播放对应 mp3/wav/ogg（volume=1）
+         * - 未配置则使用下方 WebAudio 蜂鸣；部分浏览器需用户先点击过页面才会出声
+         */
+        const MCP_ORDER_NOTIFY_GAIN = 1.0;
+
+        function mcpOrderAuditCustomSoundUrl(kind) {
+            const el = document.getElementById('mcp-order-audit-sound-config');
+            if (!el) return '';
+            const attr = kind === 'new' ? 'data-sound-new' : kind === 'merged' ? 'data-sound-merged' : kind === 'save' ? 'data-sound-save' : '';
+            if (!attr) return '';
+            return (el.getAttribute(attr) || '').trim();
+        }
+
+        function mcpShipmentAuditCustomSoundUrl(kind) {
+            const el = document.getElementById('mcp-order-audit-sound-config');
+            if (!el) return '';
+            const attr = kind === 'new' ? 'data-shipment-sound-new' : kind === 'merged' ? 'data-shipment-sound-merged' : '';
+            if (!attr) return '';
+            return (el.getAttribute(attr) || '').trim();
+        }
+
+        function mcpOrderAuditEnsureAudioContext() {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) return null;
+                if (!window._mcpOrderAuditAudioCtx) {
+                    window._mcpOrderAuditAudioCtx = new AC();
+                }
+                const ctx = window._mcpOrderAuditAudioCtx;
+                if (ctx.state === 'suspended') {
+                    ctx.resume().catch(function () { /* ignore */ });
+                }
+                return ctx;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function mcpOrderAuditPlayTone(ctx, frequency, startTime, durationSec, volume) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(frequency, startTime);
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(volume, startTime + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.001, startTime + durationSec);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(startTime);
+            osc.stop(startTime + durationSec + 0.04);
+        }
+
+        function playMcpOrderNotifySoundBuiltin(kind) {
+            const ctx = mcpOrderAuditEnsureAudioContext();
+            if (!ctx) return;
+            const now = ctx.currentTime;
+            try {
+                if (kind === 'new') {
+                    mcpOrderAuditPlayTone(ctx, 880, now, 0.09, MCP_ORDER_NOTIFY_GAIN);
+                    mcpOrderAuditPlayTone(ctx, 1174, now + 0.11, 0.1, MCP_ORDER_NOTIFY_GAIN);
+                } else if (kind === 'merged') {
+                    mcpOrderAuditPlayTone(ctx, 392, now, 0.14, MCP_ORDER_NOTIFY_GAIN);
+                    mcpOrderAuditPlayTone(ctx, 311, now + 0.2, 0.18, MCP_ORDER_NOTIFY_GAIN);
+                } else if (kind === 'save') {
+                    mcpOrderAuditPlayTone(ctx, 660, now, 0.07, MCP_ORDER_NOTIFY_GAIN);
+                }
+            } catch (e) {
+                console.warn('MCP 内置提示音播放失败', e);
+            }
+        }
+
+        function playMcpShipmentNotifySoundBuiltin(kind) {
+            const ctx = mcpOrderAuditEnsureAudioContext();
+            if (!ctx) return;
+            const now = ctx.currentTime;
+            try {
+                // 与订单蜂鸣区分：发货用更低频/更长节奏
+                if (kind === 'new') {
+                    mcpOrderAuditPlayTone(ctx, 523, now, 0.12, MCP_ORDER_NOTIFY_GAIN);      // C5
+                    mcpOrderAuditPlayTone(ctx, 659, now + 0.16, 0.12, MCP_ORDER_NOTIFY_GAIN); // E5
+                    mcpOrderAuditPlayTone(ctx, 784, now + 0.32, 0.14, MCP_ORDER_NOTIFY_GAIN); // G5
+                } else if (kind === 'merged') {
+                    mcpOrderAuditPlayTone(ctx, 330, now, 0.18, MCP_ORDER_NOTIFY_GAIN);
+                    mcpOrderAuditPlayTone(ctx, 262, now + 0.22, 0.22, MCP_ORDER_NOTIFY_GAIN);
+                }
+            } catch (e) {
+                console.warn('MCP 发货内置提示音播放失败', e);
+            }
+        }
+
+        function playMcpOrderNotifySound(kind) {
+            const url = mcpOrderAuditCustomSoundUrl(kind);
+            if (url) {
+                let usedBuiltin = false;
+                const fallbackBuiltin = function (reason) {
+                    if (usedBuiltin) return;
+                    usedBuiltin = true;
+                    console.warn('MCP 自定义提示音不可用，已回退内置蜂鸣。原因:', reason, 'URL:', url);
+                    playMcpOrderNotifySoundBuiltin(kind);
+                };
+                try {
+                    const a = new Audio(url);
+                    a.addEventListener('error', function () {
+                        const code = a.error ? a.error.code : '';
+                        fallbackBuiltin('audio error code=' + code + '（常见：404 路径错、文件未打进包、跨域）');
+                    }, { once: true });
+                    a.volume = 1.0;
+                    a.play().catch(function (e) {
+                        fallbackBuiltin(e && e.message ? e.message : String(e));
+                    });
+                    return;
+                } catch (e) {
+                    console.warn('MCP 自定义提示音异常，回退内置音', e);
+                }
+            }
+            playMcpOrderNotifySoundBuiltin(kind);
+        }
+
+        function playMcpShipmentNotifySound(kind) {
+            const url = mcpShipmentAuditCustomSoundUrl(kind);
+            if (url) {
+                let usedBuiltin = false;
+                const fallbackBuiltin = function (reason) {
+                    if (usedBuiltin) return;
+                    usedBuiltin = true;
+                    console.warn('MCP 发货自定义提示音不可用，已回退内置蜂鸣。原因:', reason, 'URL:', url);
+                    playMcpShipmentNotifySoundBuiltin(kind);
+                };
+                try {
+                    const a = new Audio(url);
+                    a.addEventListener('error', function () {
+                        const code = a.error ? a.error.code : '';
+                        fallbackBuiltin('audio error code=' + code + '（常见：404 路径错、文件未打进包、跨域）');
+                    }, { once: true });
+                    a.volume = 1.0;
+                    a.play().catch(function (e) {
+                        fallbackBuiltin(e && e.message ? e.message : String(e));
+                    });
+                    return;
+                } catch (e) {
+                    console.warn('MCP 发货自定义提示音异常，回退内置音', e);
+                }
+            }
+            playMcpShipmentNotifySoundBuiltin(kind);
+        }
+
+        document.addEventListener('click', function mcpOrderAuditUnlockAudioOnce() {
+            mcpOrderAuditEnsureAudioContext();
+            document.removeEventListener('click', mcpOrderAuditUnlockAudioOnce, true);
+        }, true);
+
+        function setWsStatusBadge(text, variant) {
+            const el = document.getElementById('wsStatusBadge');
+            if (!el) return;
+            el.textContent = text;
+            const cls = variant === 'ok' ? 'bg-success' : variant === 'warn' ? 'bg-warning text-dark' : 'bg-secondary';
+            el.className = 'badge ' + cls;
+        }
+
+        function renderNewOrderNotifyList() {
+            const box = document.getElementById('newOrderNotifyList');
+            if (!box) return;
+            if (!pendingNotifyOrders.length) {
+                box.innerHTML = '<span class="text-muted">暂无明细</span>';
+                return;
+            }
+            const rows = pendingNotifyOrders.slice(0, 10).map((o, idx) => {
+                const name = escapeHtml(o.patientName || '-');
+                const phone = escapeHtml(o.patientPhone || '-');
+                return `${idx + 1}. ${name}（${phone}）`;
+            });
+            box.innerHTML = rows.join('<hr class="my-2">');
+        }
+
+        function markOrderTabAttentionIfNeeded() {
+            const orderPane = document.getElementById('mcp-pane-order');
+            if (orderPane && orderPane.classList.contains('active')) return;
+            ['mcp-tab-order', 'mcp-tab-order-idcard'].forEach(function (id) {
+                const btn = document.getElementById(id);
+                if (!btn || btn.querySelector('.mcp-tab-attention-dot')) return;
+                const dot = document.createElement('span');
+                dot.className = 'mcp-tab-attention-dot';
+                dot.title = '有新订单待审核';
+                btn.appendChild(dot);
+            });
+        }
+
+        function clearOrderTabAttention() {
+            document.querySelectorAll('#mcp-tab-order .mcp-tab-attention-dot, #mcp-tab-order-idcard .mcp-tab-attention-dot').forEach(el => el.remove());
+        }
+
+        /** 将通知类弹窗挂到 body，避免被 Tab 容器层叠/overflow 影响显示 */
+        function ensureMcpNotifyModalsOnBody() {
+            ['newOrderNotifyModal', 'mergedOrderNotifyModal', 'newShipmentNotifyModal', 'mergedShipmentNotifyModal'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el && el.parentElement !== document.body) {
+                    document.body.appendChild(el);
+                }
+            });
+        }
+
+        function showNewOrderNotifyModal(orderInfo) {
+            try {
+                playMcpOrderNotifySound('new');
+            } catch (e) {
+                console.warn('MCP 订单提示音', e);
+            }
+            if (orderInfo && orderInfo.pendingId) {
+                pendingNotifyOrders.unshift(orderInfo);
+                const seen = new Set();
+                pendingNotifyOrders = pendingNotifyOrders.filter(o => {
+                    const key = (o.pendingId || '') + '|' + (o.timestamp || '');
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }).slice(0, 30);
+            }
+            renderNewOrderNotifyList();
+            const modalEl = document.getElementById('newOrderNotifyModal');
+            try {
+                if (modalEl && typeof bootstrap !== 'undefined') {
+                    modalEl.addEventListener('hidden.bs.modal', function () {
+                        pendingNotifyOrders = [];
+                        renderNewOrderNotifyList();
+                    }, { once: true });
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                } else {
+                    alert('有新提交的 MCP 订单需要审核');
+                }
+            } catch (e) {
+                console.warn('MCP 新订单弹窗失败', e);
+                alert('有新提交的 MCP 订单需要审核');
+            }
+        }
+
+        function renderMergedOrderNotifyList() {
+            const box = document.getElementById('mergedOrderNotifyList');
+            if (!box) return;
+            if (!pendingMergedNotifyOrders.length) {
+                box.innerHTML = '<span class="text-muted">暂无明细</span>';
+                return;
+            }
+            const rows = pendingMergedNotifyOrders.slice(0, 10).map((o, idx) => {
+                const name = escapeHtml(o.patientName || '-');
+                const phone = escapeHtml(o.patientPhone || '-');
+                return `${idx + 1}. ${name}（${phone}）`;
+            });
+            box.innerHTML = rows.join('<hr class="my-2">');
+        }
+
+        function showMergedOrderNotifyModal(orderInfo) {
+            try {
+                playMcpOrderNotifySound('merged');
+            } catch (e) {
+                console.warn('MCP 合并订单提示音', e);
+            }
+            if (orderInfo && orderInfo.pendingId) {
+                pendingMergedNotifyOrders.unshift(orderInfo);
+                const seen = new Set();
+                pendingMergedNotifyOrders = pendingMergedNotifyOrders.filter(o => {
+                    const key = (o.pendingId || '') + '|' + (o.timestamp || '');
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }).slice(0, 30);
+            }
+            renderMergedOrderNotifyList();
+            const modalEl = document.getElementById('mergedOrderNotifyModal');
+            try {
+                if (modalEl && typeof bootstrap !== 'undefined') {
+                    modalEl.addEventListener('hidden.bs.modal', function () {
+                        pendingMergedNotifyOrders = [];
+                        renderMergedOrderNotifyList();
+                    }, { once: true });
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                } else {
+                    alert('重复提交已合并');
+                }
+            } catch (e) {
+                console.warn('MCP 合并订单弹窗失败', e);
+                alert('重复提交已合并');
+            }
+        }
+
+        function renderNewShipmentNotifyList() {
+            const box = document.getElementById('newShipmentNotifyList');
+            if (!box) return;
+            if (!pendingNotifyShipments.length) {
+                box.innerHTML = '<span class="text-muted">暂无明细</span>';
+                return;
+            }
+            const rows = pendingNotifyShipments.slice(0, 10).map((o, idx) => {
+                const sid = escapeHtml(o.shipmentId || '-');
+                const name = escapeHtml(o.recipientName || '-');
+                const phone = escapeHtml(o.recipientPhone || '-');
+                return `${idx + 1}. ${sid} / ${name}（${phone}）`;
+            });
+            box.innerHTML = rows.join('<hr class="my-2">');
+        }
+
+        function showNewShipmentNotifyModal(info) {
+            try {
+                playMcpShipmentNotifySound('new');
+            } catch (e) {
+                console.warn('MCP 发货提示音', e);
+            }
+            if (info && info.shipmentId) {
+                pendingNotifyShipments.unshift(info);
+                const seen = new Set();
+                pendingNotifyShipments = pendingNotifyShipments.filter(o => {
+                    const key = (o.shipmentId || '') + '|' + (o.timestamp || '');
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }).slice(0, 30);
+            }
+            renderNewShipmentNotifyList();
+            const modalEl = document.getElementById('newShipmentNotifyModal');
+            try {
+                if (modalEl && typeof bootstrap !== 'undefined') {
+                    modalEl.addEventListener('hidden.bs.modal', function () {
+                        pendingNotifyShipments = [];
+                        renderNewShipmentNotifyList();
+                    }, { once: true });
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                } else {
+                    alert('有新的 MCP 发货登记');
+                }
+            } catch (e) {
+                console.warn('MCP 新发货弹窗失败', e);
+                alert('有新的 MCP 发货登记');
+            }
+        }
+
+        function renderMergedShipmentNotifyList() {
+            const box = document.getElementById('mergedShipmentNotifyList');
+            if (!box) return;
+            if (!pendingMergedNotifyShipments.length) {
+                box.innerHTML = '<span class="text-muted">暂无明细</span>';
+                return;
+            }
+            const rows = pendingMergedNotifyShipments.slice(0, 10).map((o, idx) => {
+                const sid = escapeHtml(o.shipmentId || '-');
+                const name = escapeHtml(o.recipientName || '-');
+                const phone = escapeHtml(o.recipientPhone || '-');
+                return `${idx + 1}. ${sid} / ${name}（${phone}）`;
+            });
+            box.innerHTML = rows.join('<hr class="my-2">');
+        }
+
+        function showMergedShipmentNotifyModal(info) {
+            try {
+                playMcpShipmentNotifySound('merged');
+            } catch (e) {
+                console.warn('MCP 发货合并提示音', e);
+            }
+            if (info && info.shipmentId) {
+                pendingMergedNotifyShipments.unshift(info);
+                const seen = new Set();
+                pendingMergedNotifyShipments = pendingMergedNotifyShipments.filter(o => {
+                    const key = (o.shipmentId || '') + '|' + (o.timestamp || '');
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                }).slice(0, 30);
+            }
+            renderMergedShipmentNotifyList();
+            const modalEl = document.getElementById('mergedShipmentNotifyModal');
+            try {
+                if (modalEl && typeof bootstrap !== 'undefined') {
+                    modalEl.addEventListener('hidden.bs.modal', function () {
+                        pendingMergedNotifyShipments = [];
+                        renderMergedShipmentNotifyList();
+                    }, { once: true });
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                } else {
+                    alert('发货重复提交已合并');
+                }
+            } catch (e) {
+                console.warn('MCP 发货合并弹窗失败', e);
+                alert('发货重复提交已合并');
+            }
+        }
+
+        function connectMcpOrderAuditWebSocket() {
+            if (typeof SockJS === 'undefined' || typeof Stomp === 'undefined') {
+                setWsStatusBadge('实时通道：库未加载', 'warn');
+                return;
+            }
+            setWsStatusBadge('实时通道：连接中…', 'warn');
+            const socket = new SockJS(BASE_URL + '/ws/mcp-order-audit');
+            socket.onclose = function () {
+                setWsStatusBadge('实时通道：断开，重连中…', 'warn');
+                if (window._mcpWsPingTimer) {
+                    clearInterval(window._mcpWsPingTimer);
+                    window._mcpWsPingTimer = null;
+                }
+                stompClient = null;
+                setTimeout(connectMcpOrderAuditWebSocket, wsReconnectDelayMs);
+                wsReconnectDelayMs = Math.min(Math.floor(wsReconnectDelayMs * 1.5), 60000);
+            };
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null;
+            stompClient.connect({}, function () {
+                wsReconnectDelayMs = 3000;
+                setWsStatusBadge('实时通道：已连接', 'ok');
+                stompClient.subscribe('/topic/mcp-order-audit/pending', function (message) {
+                    try {
+                        const body = JSON.parse(message.body);
+                        if (body.type === 'NEW_PENDING_ORDER') {
+                            setTimeout(function () {
+                                try {
+                                    showNewOrderNotifyModal({
+                                        pendingId: body.pendingId || '',
+                                        patientName: body.patientName || '',
+                                        patientPhone: body.patientPhone || '',
+                                        groupName: body.groupName || '',
+                                        orderRemark: body.orderRemark || '',
+                                        timestamp: body.timestamp || Date.now()
+                                    });
+                                } catch (err) {
+                                    console.warn('新订单弹窗处理异常', err);
+                                }
+                                markOrderTabAttentionIfNeeded();
+                                try {
+                                    loadOrders();
+                                } catch (err2) {
+                                    console.warn('loadOrders 异常', err2);
+                                }
+                            }, 0);
+                        } else if (body.type === 'MERGED_PENDING_ORDER') {
+                            setTimeout(function () {
+                                try {
+                                    showMergedOrderNotifyModal({
+                                        pendingId: body.pendingId || '',
+                                        patientName: body.patientName || '',
+                                        patientPhone: body.patientPhone || '',
+                                        timestamp: body.timestamp || Date.now()
+                                    });
+                                } catch (err) {
+                                    console.warn('合并订单弹窗处理异常', err);
+                                }
+                                markOrderTabAttentionIfNeeded();
+                                try {
+                                    loadOrders();
+                                } catch (err2) {
+                                    console.warn('loadOrders 异常', err2);
+                                }
+                            }, 0);
+                        } else if (body.type === 'NEW_SHIPMENT') {
+                            setTimeout(function () {
+                                try {
+                                    showNewShipmentNotifyModal({
+                                        shipmentId: body.shipmentId || '',
+                                        recipientName: body.recipientName || '',
+                                        recipientPhone: body.recipientPhone || '',
+                                        address: body.address || '',
+                                        shipMethod: body.shipMethod || '',
+                                        timestamp: body.timestamp || Date.now()
+                                    });
+                                } catch (err) {
+                                    console.warn('新发货弹窗处理异常', err);
+                                }
+                                try {
+                                    loadShipments();
+                                } catch (err2) {
+                                    console.warn('loadShipments 异常', err2);
+                                }
+                            }, 0);
+                        } else if (body.type === 'MERGED_SHIPMENT') {
+                            setTimeout(function () {
+                                try {
+                                    showMergedShipmentNotifyModal({
+                                        shipmentId: body.shipmentId || '',
+                                        recipientName: body.recipientName || '',
+                                        recipientPhone: body.recipientPhone || '',
+                                        timestamp: body.timestamp || Date.now()
+                                    });
+                                } catch (err) {
+                                    console.warn('发货合并弹窗处理异常', err);
+                                }
+                                try {
+                                    loadShipments();
+                                } catch (err2) {
+                                    console.warn('loadShipments 异常', err2);
+                                }
+                            }, 0);
+                        }
+                    } catch (e) {
+                        console.warn('WebSocket 消息解析失败', e);
+                        loadOrders();
+                    }
+                });
+                if (window._mcpWsPingTimer) clearInterval(window._mcpWsPingTimer);
+                window._mcpWsPingTimer = setInterval(function () {
+                    if (stompClient && stompClient.connected) {
+                        try {
+                            stompClient.send('/app/mcp-order-audit/ping', {}, JSON.stringify({ t: Date.now() }));
+                        } catch (e) { /* ignore */ }
+                    }
+                }, 45000);
+            }, function () {
+                setWsStatusBadge('实时通道：握手失败…', 'warn');
+                // 重连由 SockJS socket.onclose 统一调度，避免重复定时器
+            });
+        }
+
+        // 页面加载：列表 + WebSocket（STOMP over SockJS）
+        window.onload = function () {
+            ensureMcpNotifyModalsOnBody();
+            const tabOrderPhone = document.getElementById('mcp-tab-order');
+            const tabOrderIdCard = document.getElementById('mcp-tab-order-idcard');
+            if (tabOrderPhone) {
+                tabOrderPhone.addEventListener('shown.bs.tab', function () {
+                    setOrderTriggerType('phone', true);
+                    clearOrderTabAttention();
+                });
+            }
+            if (tabOrderIdCard) {
+                tabOrderIdCard.addEventListener('shown.bs.tab', function () {
+                    setOrderTriggerType('idcard', true);
+                    clearOrderTabAttention();
+                });
+            }
+            applyOrderTriggerVisibility();
+            Promise.allSettled([loadGroupTokenOptions(), loadPatientEducationOptions()]).finally(() => loadOrders());
+            connectMcpOrderAuditWebSocket();
+            const tabShip = document.getElementById('mcp-tab-shipment');
+            if (tabShip) {
+                tabShip.addEventListener('shown.bs.tab', function () {
+                    loadShipments();
+                    startShipmentPolling();
+                });
+            }
+            const tabOrder = document.getElementById('mcp-tab-order');
+            if (tabOrder) {
+                tabOrder.addEventListener('shown.bs.tab', function () {
+                    stopShipmentPolling();
+                    clearOrderTabAttention();
+                });
+            }
+            if (tabOrderIdCard) {
+                tabOrderIdCard.addEventListener('shown.bs.tab', function () {
+                    stopShipmentPolling();
+                    clearOrderTabAttention();
+                });
+            }
+        };
+    </script>
+</body>
+</html>

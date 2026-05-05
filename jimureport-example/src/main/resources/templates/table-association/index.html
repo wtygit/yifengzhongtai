@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多表关联与字段组合 - 一丰报表</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus@2.8.4/dist/index.css">
+    <style>
+        :root {
+            /* 与报表工作台保持一致的头部与基础配色 */
+            --ta-header-bg: #1890ff;
+            --ta-header-height: 50px;
+            --ta-sidebar-width: 300px;
+            --ta-right-width: 520px;
+            --ta-radius: 8px;
+            --ta-radius-sm: 6px;
+            --ta-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            --ta-shadow-hover: 0 4px 20px rgba(0,0,0,0.08);
+            --ta-border: 1px solid #e5e7eb;
+            --ta-bg-subtle: #ffffff;
+            --ta-text: #1e293b;
+            --ta-text-secondary: #64748b;
+            --ta-accent: #2563eb;
+            --ta-accent-light: #eff6ff;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+            font-size: 14px;
+            color: var(--ta-text);
+        }
+        #app {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .ta-header {
+            height: var(--ta-header-height);
+            background: var(--ta-header-bg);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            flex-shrink: 0;
+        }
+        .ta-header-title {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .ta-header-spacer { flex: 1; }
+        .ta-header-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+        }
+        .ta-header-nav a {
+            color: #ffffff;
+            text-decoration: none;
+        }
+        .ta-layout {
+            flex: 1;
+            display: grid;
+            grid-template-columns: var(--ta-sidebar-width) 1fr var(--ta-right-width);
+            gap: 12px;
+            padding: 12px;
+            box-sizing: border-box;
+            background: var(--ta-bg-subtle);
+            min-height: 0;
+        }
+        .ta-panel {
+            background: #fff;
+            border-radius: var(--ta-radius);
+            box-shadow: var(--ta-shadow);
+            border: var(--ta-border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .ta-panel-header {
+            padding: 12px 16px;
+            border-bottom: var(--ta-border);
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--ta-text);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #fff;
+        }
+        .ta-panel-body {
+            flex: 1;
+            padding: 14px;
+            overflow: auto;
+            min-height: 0;
+        }
+        .ta-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ta-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 14px 0 8px 0;
+            padding-left: 10px;
+            border-left: 3px solid var(--ta-accent);
+        }
+        .ta-section-title:first-child { margin-top: 0; }
+        .ta-canvas {
+            flex: 1;
+            min-height: 200px;
+            background: 
+                linear-gradient(90deg, #e2e8f0 1px, transparent 1px),
+                linear-gradient(#e2e8f0 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-color: #f1f5f9;
+            border-radius: var(--ta-radius-sm);
+            border: 2px dashed #cbd5e1;
+            position: relative;
+        }
+        .ta-sql-editor {
+            height: 150px;
+            border: var(--ta-border);
+            border-radius: var(--ta-radius-sm);
+            background: #1e293b;
+            color: #e2e8f0;
+            font-family: 'Consolas', 'Monaco', 'Fira Code', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            padding: 12px;
+            overflow: auto;
+            white-space: pre;
+        }
+        .ta-field-list {
+            max-height: 200px;
+            overflow: auto;
+            border: var(--ta-border);
+            border-radius: var(--ta-radius-sm);
+            background: #fff;
+        }
+        .ta-computed-tag {
+            font-size: 11px;
+            color: #0f766e;
+            background: #ecfdf5;
+            border-radius: 10px;
+            padding: 2px 6px;
+            margin-left: 6px;
+        }
+        .ta-computed-area { max-height: 280px; overflow: auto; }
+        .ta-computed-rows { padding: 8px 0; }
+        .ta-computed-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-bottom: 1px solid #f1f5f9;
+            flex-wrap: wrap;
+        }
+        .ta-computed-row:last-child { border-bottom: none; }
+        .ta-computed-row .el-input { flex-shrink: 0; }
+        .ta-computed-row .el-select { min-width: 0; }
+        .ta-computed-row .ta-computed-alias-wrap {
+            width: 160px;
+            min-width: 160px;
+            flex-shrink: 0;
+            pointer-events: auto;
+        }
+        .ta-computed-row .ta-computed-alias-wrap input {
+            width: 100%;
+            padding: 5px 8px;
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .ta-computed-row .ta-computed-alias-wrap input:focus {
+            outline: none;
+            border-color: var(--ta-accent);
+        }
+        .ta-computed-delete-wrap {
+            margin-left: 16px;
+            flex-shrink: 0;
+        }
+        /* 保证计算字段整块可点击，不被遮挡 */
+        .ta-computed-section {
+            position: relative;
+            z-index: 2;
+            pointer-events: auto;
+        }
+        .ta-computed-section * {
+            pointer-events: auto;
+        }
+        .ta-add-computed-btn {
+            padding: 6px 14px;
+            font-size: 13px;
+            color: #fff;
+            background: var(--ta-accent);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .ta-add-computed-btn:hover {
+            background: #1d4ed8;
+        }
+        .ta-computed-empty {
+            cursor: pointer;
+        }
+        .ta-field-row {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            transition: background 0.15s;
+        }
+        .ta-field-row:hover { background: var(--ta-accent-light); }
+        .ta-field-row:last-child { border-bottom: none; }
+        .ta-field-row .name {
+            flex: 1;
+            color: var(--ta-text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+        }
+        .ta-field-row .alias {
+            width: 110px;
+            margin-left: 8px;
+        }
+        .ta-field-group {
+            margin-bottom: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: var(--ta-radius-sm);
+            overflow: hidden;
+        }
+        .ta-field-group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 10px;
+            background: #f1f5f9;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ta-text);
+        }
+        .ta-field-group-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .ta-join-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .ta-join-row {
+            display: flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 12px;
+            gap: 4px;
+        }
+        .ta-join-display {
+            font-size: 12px;
+            color: #64748b;
+            margin-right: 4px;
+            white-space: nowrap;
+        }
+        .ta-join-preview {
+            margin-left: 8px;
+            color: var(--ta-text-secondary);
+            font-family: 'Consolas', monospace;
+            flex: 1;
+            white-space: normal;
+        }
+        .ta-join-row:last-child {
+            border-bottom: none;
+        }
+        .ta-table-card {
+            position: absolute;
+            width: 180px;
+            min-height: 64px;
+            background: #fff;
+            border-radius: var(--ta-radius-sm);
+            box-shadow: var(--ta-shadow);
+            border: var(--ta-border);
+            cursor: move;
+            padding: 0;
+            box-sizing: border-box;
+            font-size: 12px;
+            overflow: hidden;
+            transition: box-shadow 0.2s, transform 0.1s;
+        }
+        .ta-table-card:hover {
+            box-shadow: var(--ta-shadow-hover);
+        }
+        .ta-table-card-header {
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            color: #fff;
+            padding: 8px 10px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+        .ta-table-card-header .el-tag {
+            background: rgba(255,255,255,0.25);
+            border: none;
+            color: #fff;
+            font-size: 10px;
+        }
+        .ta-table-card-columns {
+            padding: 8px 10px;
+            max-height: 130px;
+            overflow: auto;
+        }
+        .ta-table-card-columns > div {
+            font-size: 11px;
+            color: var(--ta-text-secondary);
+            padding: 2px 0;
+            font-family: 'Consolas', monospace;
+        }
+        .ta-table-card-columns > div span { color: #94a3b8; }
+        .ta-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ta-table-list-item {
+            padding: 10px 12px;
+            border-radius: var(--ta-radius-sm);
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--ta-text);
+            border: 1px solid transparent;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .ta-table-list-item:hover {
+            background: var(--ta-accent-light);
+            border-color: #bfdbfe;
+        }
+        .ta-tag-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .ta-tag-wrap .el-tag {
+            margin: 0;
+        }
+        .ta-empty-hint {
+            font-size: 12px;
+            color: #94a3b8;
+            padding: 12px;
+            text-align: center;
+            background: #f8fafc;
+            border-radius: var(--ta-radius-sm);
+            border: 1px dashed #e2e8f0;
+        }
+        .ta-canvas-hint {
+            font-size: 12px;
+            color: var(--ta-text-secondary);
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: #fff;
+            border-radius: var(--ta-radius-sm);
+            border: var(--ta-border);
+        }
+        .el-divider--horizontal { margin: 16px 0 10px 0; }
+        .el-divider__text { font-size: 12px; color: var(--ta-text-secondary); font-weight: 600; }
+        .ta-preview-filter-bar {
+            margin-bottom: 10px;
+            padding: 10px 12px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: var(--ta-radius-sm);
+        }
+        .ta-preview-filter-bar .ta-filter-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--ta-text-secondary);
+            margin-right: 12px;
+            vertical-align: middle;
+        }
+        .ta-preview-filter-form .el-form-item { margin-bottom: 8px; margin-right: 12px; }
+        /* 中间上方：字段选择浮动区域（预留一块固定区域） */
+        .ta-center-field-float {
+            margin-bottom: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: var(--ta-radius-sm);
+            background: #f8fafc;
+            overflow: hidden;
+        }
+        .ta-center-field-float .ta-section-title {
+            margin: 0;
+            padding: 10px 12px;
+            background: #f1f5f9;
+            border-left: none;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .ta-field-float-content {
+            max-height: 320px;
+            overflow: auto;
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .ta-field-float-card {
+            flex: 0 0 auto;
+            width: 280px;
+            min-height: 80px;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: var(--ta-radius-sm);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        .ta-field-float-card-header {
+            padding: 8px 10px;
+            background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+            color: #fff;
+            font-weight: 600;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .ta-field-float-card-body {
+            padding: 8px 10px;
+            max-height: 200px;
+            overflow: auto;
+        }
+        .ta-field-float-card .ta-field-row {
+            padding: 6px 8px;
+        }
+        .ta-field-float-card .ta-field-row .alias {
+            width: 90px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.7.9/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/element-plus@2.8.4/dist/index.full.min.js"></script>
+</head>
+<body>
+<div id="app">
+    <header class="ta-header">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <span class="ta-header-title">多表关联与字段组合</span>
+            <a href="/mcp/order-audit" style="color: #ffffff; text-decoration: none; font-size: 14px; padding: 4px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">MCP订单审核</a>
+        </div>
+        <div class="ta-header-spacer"></div>
+        <nav class="ta-header-nav">
+            <span style="opacity:0.9;">[[${loginUser}]]</span>
+            <a href="/jmreport/list">进入BI工作台</a>
+            <a href="/api-generator/list">进入Api工作台</a>
+            <a href="/table-association">多表关联与字段组合</a>
+            <a href="/logout">退出登录</a>
+        </nav>
+    </header>
+
+    <div class="ta-layout" v-loading="loading">
+        <!-- 左：数据源与表选择 -->
+        <div class="ta-panel">
+            <div class="ta-panel-header">数据源与表</div>
+            <div class="ta-panel-body">
+                <el-form label-width="68px" size="default" label-position="top">
+                    <el-form-item label="数据源">
+                        <el-select v-model="state.selectedDataSourceId" placeholder="请选择数据源" style="width: 100%;" @change="onDataSourceChange" size="default">
+                            <el-option
+                                    v-for="ds in state.dataSources"
+                                    :key="ds.id"
+                                    :label="ds.name + (ds.schema ? ' · ' + ds.schema : '')"
+                                    :value="ds.id">
+                            </el-option>
+                        </el-select>
+                    </el-form-item>
+                </el-form>
+
+                <div class="ta-section-title">可用表</div>
+                <el-input
+                        v-model="state.tableFilter"
+                        placeholder="搜索表名"
+                        size="default"
+                        clearable
+                        style="margin-bottom: 10px;">
+                </el-input>
+                <el-scrollbar v-if="filteredTables.length">
+                    <div class="ta-table-list-item"
+                         v-for="tbl in filteredTables"
+                         :key="tbl.tableName"
+                         @click="addTable(tbl)">
+                        {{ tbl.tableName }}
+                    </div>
+                </el-scrollbar>
+                <div v-else class="ta-empty-hint">选择数据源后将显示表列表，点击表名可加载字段。</div>
+
+                <div class="ta-section-title">已建数据集</div>
+                <el-scrollbar style="margin-top: 4px; max-height: 180px;">
+                    <div v-if="!state.datasets.length" class="ta-empty-hint">
+                        选择数据源并保存数据集后，这里会展示通过多表关联创建的表。
+                    </div>
+                    <div v-else>
+                        <div
+                                class="ta-table-list-item"
+                                v-for="ds in state.datasets"
+                                :key="ds.id"
+                                @click="openDatasetDetail(ds)">
+                            <div style="font-weight: 600; margin-bottom: 2px;">
+                                {{ ds.name }}
+                            </div>
+                            <div style="font-size: 12px; color: #64748b;">
+                                物化表：{{ ds.physicalTable || '-' }}
+                            </div>
+                            <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;" v-if="ds.description">
+                                {{ ds.description }}
+                            </div>
+                        </div>
+                    </div>
+                </el-scrollbar>
+            </div>
+        </div>
+
+        <!-- 中：上方字段选择浮动区 + 下方数据预览 -->
+        <div class="ta-panel">
+            <div class="ta-panel-header">
+                <span>数据预览</span>
+                <div class="ta-toolbar">
+                    <el-button size="default" type="primary" @click="refreshSql">生成 SQL</el-button>
+                    <el-button size="default" @click="doPreview" :disabled="!state.sql">刷新预览</el-button>
+                </div>
+            </div>
+            <div class="ta-panel-body">
+                <!-- 中间上方预留：字段选择浮动窗口 -->
+                <div class="ta-center-field-float">
+                    <div class="ta-section-title">字段选择</div>
+                    <div class="ta-field-float-content">
+                        <template v-for="group in fieldsByTable" :key="group.alias">
+                            <div class="ta-field-float-card">
+                                <div class="ta-field-float-card-header">
+                                    <span>{{ group.alias }} → {{ group.tableName }}</span>
+                                    <el-button type="danger" link size="small" style="color: rgba(255,255,255,0.95);" @click="removeTable(group.alias)">移除</el-button>
+                                </div>
+                                <div class="ta-field-float-card-body">
+                                    <div class="ta-field-row" style="border-bottom: 1px solid #f1f5f9; padding: 6px 8px;">
+                                        <el-checkbox :model-value="group.fields.every(f => f.selected)" @update:model-value="toggleGroupSelect(group, $event)" style="margin-right: 6px;">全选</el-checkbox>
+                                    </div>
+                                    <div class="ta-field-row"
+                                         v-for="field in group.fields"
+                                         :key="field.tableAlias + '.' + field.columnName">
+                                        <el-checkbox v-model="field.selected" style="margin-right: 8px;"></el-checkbox>
+                                        <span class="name">{{ field.columnName }}</span>
+                                        <el-input v-model="field.alias" class="alias" size="small" placeholder="别名" clearable></el-input>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                        <div v-if="!state.fields.length" class="ta-empty-hint" style="margin: 0; width: 100%;">在左侧点击表名加载字段，此处将显示已选表及字段。</div>
+                    </div>
+                </div>
+
+                <!-- 中间：关联条件（从右侧移动到这里） -->
+                <div class="ta-section-title">关联条件</div>
+                <div class="ta-join-toolbar" v-if="state.tables.length > 1">
+                    <el-button size="small" @click="addJoin">新增关联</el-button>
+                    <el-button size="small" type="primary" link @click="autoSuggestJoins">智能推荐</el-button>
+                </div>
+                <div class="ta-field-list" style="margin-top: 8px;">
+                    <div
+                            class="ta-join-row"
+                            v-for="(join, idx) in state.joins"
+                            :key="idx">
+                        <!-- 展示模式：一行文字，无横向滚动 -->
+                        <template v-if="state.editingJoinIndex !== idx">
+                            <span class="ta-join-preview">{{ formatJoin(join) || '未完整选择，点击编辑设置关联' }}</span>
+                            <el-button link size="small" type="primary" @click="startEditJoin(idx)">编辑</el-button>
+                            <el-button type="danger" link size="small" @click="removeJoin(idx)">删除</el-button>
+                        </template>
+                        <!-- 编辑模式：显示下拉，编辑完成后切回展示模式 -->
+                        <template v-else>
+                            <!-- 编辑模式：适度放宽，让字段下拉能展示更多内容 -->
+                            <el-select v-model="join.joinType" size="small" style="width: 120px; margin-right: 6px;" placeholder="关联类型">
+                                <el-option label="INNER JOIN" value="INNER"></el-option>
+                                <el-option label="LEFT JOIN" value="LEFT"></el-option>
+                                <el-option label="RIGHT JOIN" value="RIGHT"></el-option>
+                            </el-select>
+                            <el-select v-model="join.leftTableAlias" size="small" style="width: 150px; margin-right: 4px;" placeholder="左表" @change="onJoinTableChange(join, 'left')">
+                                <el-option
+                                        v-for="t in state.tables"
+                                        :key="t.alias"
+                                        :label="t.alias + ' · ' + t.tableName"
+                                        :value="t.alias">
+                                </el-option>
+                            </el-select>
+                            <!-- 左字段：用 flex:1 吃掉中间空间，长字段名能完整展示 -->
+                            <el-select v-model="join.leftField" size="small" style="flex: 1; min-width: 140px; margin-right: 4px;">
+                                <el-option
+                                        v-for="col in getColumnsByAlias(join.leftTableAlias)"
+                                        :key="col.columnName"
+                                        :label="col.columnName"
+                                        :value="col.columnName">
+                                </el-option>
+                            </el-select>
+                            <span style="margin: 0 4px; color:#94a3b8;">=</span>
+                            <el-select v-model="join.rightTableAlias" size="small" style="width: 150px; margin-right: 4px;" placeholder="右表" @change="onJoinTableChange(join, 'right')">
+                                <el-option
+                                        v-for="t in state.tables"
+                                        :key="t.alias"
+                                        :label="t.alias + ' · ' + t.tableName"
+                                        :value="t.alias">
+                                </el-option>
+                            </el-select>
+                            <!-- 右字段同样自适应，整体填满一行 -->
+                            <el-select v-model="join.rightField" size="small" style="flex: 1; min-width: 140px; margin-right: 4px;">
+                                <el-option
+                                        v-for="col in getColumnsByAlias(join.rightTableAlias)"
+                                        :key="col.columnName"
+                                        :label="col.columnName"
+                                        :value="col.columnName">
+                                </el-option>
+                            </el-select>
+                            <el-button link size="small" type="primary" @click="finishEditJoin()">完成</el-button>
+                            <el-button type="danger" link size="small" @click="removeJoin(idx)">删除</el-button>
+                        </template>
+                    </div>
+                    <div v-if="!state.joins.length" class="ta-empty-hint" style="border:none;">
+                        选择两张以上的表后，可点击「新增关联」或「智能推荐」完成联表设置。
+                    </div>
+                </div>
+
+                <div class="ta-section-title">当前结果</div>
+                <div v-if="!state.preview.rows.length" class="ta-empty-hint">
+                    生成 SQL 后点击右上角「刷新预览」，这里将展示前 50 行数据。
+                </div>
+                <template v-else>
+                    <div class="ta-preview-filter-bar">
+                        <span class="ta-filter-label">筛选条件</span>
+                        <el-form inline size="small" class="ta-preview-filter-form">
+                            <el-form-item v-for="(f, idx) in state.previewFilters" :key="idx">
+                                <el-select v-model="f.column" placeholder="字段" style="width: 140px; margin-right: 6px;">
+                                    <el-option
+                                            v-for="col in state.preview.columns"
+                                            :key="col"
+                                            :label="col"
+                                            :value="col">
+                                    </el-option>
+                                </el-select>
+                                <el-select v-model="f.op" placeholder="条件" style="width: 110px; margin-right: 6px;">
+                                    <el-option label="=" value="eq"></el-option>
+                                    <el-option label="≠" value="neq"></el-option>
+                                    <el-option label="包含" value="contains"></el-option>
+                                    <el-option label="不包含" value="not_contains"></el-option>
+                                    <el-option label="&gt;" value="gt"></el-option>
+                                    <el-option label="&gt;=" value="gte"></el-option>
+                                    <el-option label="&lt;" value="lt"></el-option>
+                                    <el-option label="&lt;=" value="lte"></el-option>
+                                </el-select>
+                                <el-input v-model="f.value" placeholder="值" style="width: 160px; margin-right: 6px;"></el-input>
+                                <el-button v-if="state.previewFilters.length > 1" type="danger" link size="small" @click="removePreviewFilter(idx)">删除</el-button>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" link size="small" @click="addPreviewFilter">新增条件</el-button>
+                                <el-button link size="small" @click="clearPreviewFilters">清空筛选</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </div>
+                    <el-table
+                            :data="filteredPreviewRows"
+                        size="small"
+                        height="100%"
+                        stripe
+                        border>
+                    <el-table-column
+                            v-for="col in state.preview.columns"
+                            :key="col"
+                            :prop="col"
+                            :label="col"
+                            min-width="100"
+                            show-overflow-tooltip>
+                    </el-table-column>
+                </el-table>
+                </template>
+            </div>
+        </div>
+
+        <!-- 右：字段选择与 SQL / 预览 -->
+        <div class="ta-panel">
+            <div class="ta-panel-header">字段 · SQL · 预览</div>
+            <div class="ta-panel-body">
+                <div class="ta-section-title">基本信息</div>
+                <el-form label-width="56px" size="default" label-position="top">
+                    <el-form-item label="名称">
+                        <el-input v-model="state.name" placeholder="配置名称 / 数据集名称" clearable></el-input>
+                    </el-form-item>
+                    <el-form-item label="目标表名">
+                        <el-input v-model="state.targetTableName" placeholder="请输入要在数据源中创建的表名，如: rpt_user_order" clearable></el-input>
+                    </el-form-item>
+                    <el-form-item label="描述">
+                        <el-input v-model="state.description" type="textarea" :rows="2" placeholder="简要说明用途（可选）"></el-input>
+                    </el-form-item>
+                </el-form>
+
+                <div class="ta-section-title">字段列表</div>
+                <div class="ta-field-list" style="padding: 10px;">
+                    <div style="font-size: 12px; color:#64748b;">已加载 {{ state.fields.length }} 个字段，已选 {{ state.fields.filter(f => f.selected).length }} 个。在<strong>中间区域上方</strong>进行勾选与别名设置。</div>
+                    <el-button size="small" style="margin-top: 8px;" @click="openFieldPicker">弹窗中查看/编辑字段</el-button>
+                </div>
+
+                <div class="ta-section-title">计算字段</div>
+                <div class="ta-computed-section ta-field-list ta-computed-area">
+                    <div style="display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:8px 10px; border-bottom: 1px solid #e5e7eb;">
+                        <button type="button" class="ta-add-computed-btn" @click="addComputedField">新增聚合字段</button>
+                        <button type="button" class="ta-add-computed-btn" @click="addExpressionField">新增字段运算</button>
+                    </div>
+                    <div v-if="!state.computedFields.length" class="ta-empty-hint ta-computed-empty" style="border:none;" @click="addComputedField">
+                        聚合：SUM(金额)、COUNT(订单数) 等；<strong>字段运算</strong>：多字段之间加减乘除，如 字段A + 字段B、单价 * 数量。
+                        <br><strong style="color: var(--ta-accent); cursor: pointer;">点击上方按钮添加</strong>
+                    </div>
+                    <div v-else class="ta-computed-rows">
+                        <template v-for="(cf, idx) in state.computedFields" :key="'cf-' + idx">
+                            <!-- 聚合类型 -->
+                            <div class="ta-computed-row" v-if="(cf.type || 'aggregation') === 'aggregation'" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                <el-select v-model="cf.func" size="small" placeholder="函数" style="width: 130px; flex-shrink: 0;">
+                                    <el-option label="SUM" value="SUM"></el-option>
+                                    <el-option label="AVG" value="AVG"></el-option>
+                                    <el-option label="COUNT" value="COUNT"></el-option>
+                                    <el-option label="MAX" value="MAX"></el-option>
+                                    <el-option label="MIN" value="MIN"></el-option>
+                                    <el-option label="GROUP_CONCAT" value="GROUP_CONCAT"></el-option>
+                                    <el-option label="STDDEV" value="STDDEV"></el-option>
+                                    <el-option label="STDDEV_SAMP" value="STDDEV_SAMP"></el-option>
+                                    <el-option label="VARIANCE" value="VARIANCE"></el-option>
+                                    <el-option label="VAR_SAMP" value="VAR_SAMP"></el-option>
+                                </el-select>
+                                <el-select v-model="cf.tableAlias" size="small" placeholder="表" style="width: 140px; flex-shrink: 0;">
+                                    <el-option v-for="t in state.tables" :key="t.alias" :label="t.alias + ' · ' + t.tableName" :value="t.alias"></el-option>
+                                </el-select>
+                                <el-select v-model="cf.columnName" size="small" placeholder="字段" style="min-width: 140px; flex: 1;">
+                                    <el-option v-for="col in getColumnsByAlias(cf.tableAlias)" :key="col.columnName" :label="col.columnName" :value="col.columnName"></el-option>
+                                </el-select>
+                                <div class="ta-computed-alias-wrap">
+                                    <input type="text" :value="cf.alias" @input="cf.alias = $event.target.value" placeholder="结果别名（必填）" />
+                                </div>
+                                <span class="ta-computed-delete-wrap">
+                                    <el-button type="danger" link size="small" @click="removeComputedField(idx)">删除</el-button>
+                                </span>
+                            </div>
+                            <!-- 字段运算类型： 字段A [运算符] 字段B [运算符] 字段C ... -->
+                            <div class="ta-expression-row" v-else-if="cf.type === 'expression'" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px;">
+                                <template v-for="(op, oi) in (cf.expressionOperands || [])" :key="'op-' + oi">
+                                    <span v-if="oi > 0" style="flex: 0 0 auto;">
+                                        <el-select v-model="cf.expressionOperators[oi - 1]" size="small" placeholder="运算" style="width: 70px;">
+                                            <el-option label="+" value="+"></el-option>
+                                            <el-option label="-" value="-"></el-option>
+                                            <el-option label="×" value="*"></el-option>
+                                            <el-option label="÷" value="/"></el-option>
+                                        </el-select>
+                                    </span>
+                                    <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                        <el-select v-model="op.tableAlias" size="small" placeholder="表" style="width: 120px;">
+                                            <el-option v-for="t in state.tables" :key="t.alias" :label="t.alias + '·' + t.tableName" :value="t.alias"></el-option>
+                                        </el-select>
+                                        <el-select v-model="op.columnName" size="small" placeholder="字段" style="min-width: 120px;">
+                                            <el-option v-for="col in getColumnsByAlias(op.tableAlias)" :key="col.columnName" :label="col.columnName" :value="col.columnName"></el-option>
+                                        </el-select>
+                                    </span>
+                                </template>
+                                <el-button link size="small" type="primary" @click="addExpressionOperand(cf)">+ 添加字段</el-button>
+                                <span style="margin-left: 8px;">→ 别名</span>
+                                <el-input v-model="cf.alias" size="small" placeholder="结果别名" style="width: 120px;"></el-input>
+                                <el-button type="danger" link size="small" @click="removeComputedField(idx)">删除</el-button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="ta-section-title">SQL 预览</div>
+                <div class="ta-sql-editor">{{ state.sql || '-- 点击「生成 SQL」查看结果' }}</div>
+
+                <div class="ta-section-title">保存</div>
+                <el-button type="primary" size="default" @click="doSave" :disabled="!state.sql" style="width: 100%;">保存为数据集</el-button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 字段选择浮动窗口 -->
+    <el-dialog
+            v-model="state.fieldPickerVisible"
+            title="字段选择"
+            width="720px"
+            append-to-body
+            destroy-on-close>
+        <div class="ta-field-list" style="max-height: 70vh; overflow: auto;">
+            <div style="display:flex; justify-content:flex-end; padding:6px 10px; border-bottom: 1px solid #e5e7eb;">
+                <el-button size="small" link @click="selectAllFields">全选</el-button>
+                <el-button size="small" link @click="invertSelectFields">反选</el-button>
+            </div>
+            <template v-for="group in fieldsByTable" :key="group.alias">
+                <div class="ta-field-group">
+                    <div class="ta-field-group-header">
+                        <span class="ta-field-group-title">{{ group.alias }} → {{ group.tableName }}</span>
+                        <el-button type="danger" link size="small" @click="removeTable(group.alias)">移除该表</el-button>
+                    </div>
+                    <div class="ta-field-row"
+                         v-for="field in group.fields"
+                         :key="field.tableAlias + '.' + field.columnName">
+                        <el-checkbox v-model="field.selected" style="margin-right: 8px;"></el-checkbox>
+                        <span class="name">{{ field.tableAlias }}.{{ field.columnName }}</span>
+                        <el-input v-model="field.alias" class="alias" size="small" placeholder="别名" clearable></el-input>
+                    </div>
+                </div>
+            </template>
+            <div v-if="!state.fields.length" class="ta-empty-hint">在左侧点击表名加载字段。</div>
+        </div>
+        <template #footer>
+            <el-button @click="state.fieldPickerVisible = false">关闭</el-button>
+        </template>
+    </el-dialog>
+
+    <!-- 已建数据集详情弹窗 -->
+    <el-dialog
+            v-model="state.datasetDetailVisible"
+            title="已建数据集详情"
+            width="720px">
+        <div v-if="state.datasetDetail">
+            <el-descriptions :column="2" size="small" border>
+                <el-descriptions-item label="名称">{{ state.datasetDetail.name }}</el-descriptions-item>
+                <el-descriptions-item label="物化表">{{ state.datasetDetail.physicalTable || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="数据源ID">{{ state.datasetDetail.dataSourceId }}</el-descriptions-item>
+                <el-descriptions-item label="数据集ID">{{ state.datasetDetail.id }}</el-descriptions-item>
+                <el-descriptions-item label="创建时间">{{ formatDateTime(state.datasetDetail.createTime) }}</el-descriptions-item>
+                <el-descriptions-item label="更新时间">{{ formatDateTime(state.datasetDetail.updateTime) }}</el-descriptions-item>
+            </el-descriptions>
+            <el-divider>描述</el-divider>
+            <div style="font-size: 13px; color: #475569; white-space: pre-wrap; min-height: 32px;">
+                {{ state.datasetDetail.description || '（无）' }}
+            </div>
+            <el-divider>建表 SQL 模板</el-divider>
+            <div class="ta-sql-editor" style="max-height: 220px;">
+                {{ state.datasetDetail.sql || '-- 未记录 SQL 模板' }}
+            </div>
+        </div>
+    </el-dialog>
+</div>
+
+<script>
+const { createApp, reactive, computed, onMounted } = Vue;
+
+createApp({
+    setup() {
+        const state = reactive({
+            loading: false,
+            dataSources: [],
+            selectedDataSourceId: '',
+            tables: [],
+            tableFilter: '',
+            allTables: [],
+            columnsMap: {}, // alias -> columns[]
+            fields: [],
+            joins: [],
+            name: '',
+            targetTableName: '',
+            description: '',
+            sql: '',
+            preview: {
+                columns: [],
+                rows: []
+            },
+            // 预览结果本地筛选条件（Navicat 风格）
+            previewFilters: [
+                { column: '', op: 'eq', value: '' }
+            ],
+            // 当前数据源下，通过多表关联生成的已建数据集列表
+            datasets: [],
+            // 选中查看详情的数据集
+            datasetDetailVisible: false,
+            datasetDetail: null,
+            // 右侧字段选择浮动面板
+            fieldPickerVisible: false,
+            // 计算字段
+            computedFields: [],
+            dragging: {
+                alias: null,
+                offsetX: 0,
+                offsetY: 0
+            },
+            // 当前正在编辑第几条关联（-1 表示都在只读模式）
+            editingJoinIndex: -1
+        });
+
+        const filteredTables = computed(() => {
+            if (!state.tableFilter) return state.allTables;
+            const f = state.tableFilter.toLowerCase();
+            return state.allTables.filter(t => String(t.tableName || '').toLowerCase().includes(f));
+        });
+
+        const fieldsByTable = computed(() => {
+            const map = new Map();
+            for (const f of state.fields) {
+                const alias = f.tableAlias;
+                if (!map.has(alias)) {
+                    const tbl = state.tables.find(t => t.alias === alias);
+                    map.set(alias, { alias, tableName: tbl ? tbl.tableName : alias, fields: [] });
+                }
+                map.get(alias).fields.push(f);
+            }
+            return Array.from(map.values());
+        });
+
+        const filteredPreviewRows = computed(() => {
+            const rows = state.preview.rows || [];
+            const filters = (state.previewFilters || []).filter(f => f.column && f.op && f.value !== '');
+            if (!filters.length) return rows;
+            return rows.filter(row => {
+                return filters.every(f => {
+                    const raw = row[f.column];
+                    const v = raw == null ? '' : raw;
+                    const str = String(v).trim();
+                    const target = String(f.value).trim();
+                    switch (f.op) {
+                        case 'eq': return str === target;
+                        case 'neq': return str !== target;
+                        case 'contains': return str.includes(target);
+                        case 'not_contains': return !str.includes(target);
+                        case 'gt':
+                        case 'gte':
+                        case 'lt':
+                        case 'lte': {
+                            // 时间/日期比较：支持仅输入年份（如 2024）与 datetime 字符串比较
+                            const rowDate = parseDateLike(str);
+                            const targetDate = parseDateLike(target);
+                            if (rowDate != null && targetDate != null) {
+                                if (f.op === 'gt') return rowDate > targetDate;
+                                if (f.op === 'gte') return rowDate >= targetDate;
+                                if (f.op === 'lt') return rowDate < targetDate;
+                                if (f.op === 'lte') return rowDate <= targetDate;
+                                return false;
+                            }
+                            const n1 = Number(str);
+                            const n2 = Number(target);
+                            if (!isNaN(n1) && !isNaN(n2)) {
+                                if (f.op === 'gt') return n1 > n2;
+                                if (f.op === 'gte') return n1 >= n2;
+                                if (f.op === 'lt') return n1 < n2;
+                                if (f.op === 'lte') return n1 <= n2;
+                                return false;
+                            }
+                            return false;
+                        }
+                        default:
+                            return true;
+                    }
+                });
+            });
+        });
+
+        function parseDateLike(s) {
+            if (s == null || (s = String(s).trim()) === '') return null;
+            if (/^\d{4}$/.test(s)) return new Date(parseInt(s, 10), 0, 1);
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s);
+            const t = Date.parse(s);
+            return isNaN(t) ? null : new Date(t);
+        }
+
+        function addComputedField() {
+            const item = reactive({
+                type: 'aggregation',
+                func: 'SUM',
+                tableAlias: state.tables[0] ? state.tables[0].alias : '',
+                columnName: '',
+                alias: '',
+                enabled: true
+            });
+            state.computedFields.push(item);
+        }
+
+        function addExpressionField() {
+            const firstAlias = state.tables[0] ? state.tables[0].alias : '';
+            const item = reactive({
+                type: 'expression',
+                func: null,
+                tableAlias: null,
+                columnName: null,
+                alias: '',
+                enabled: true,
+                expressionOperands: [
+                    { tableAlias: firstAlias, columnName: '' },
+                    { tableAlias: firstAlias, columnName: '' }
+                ],
+                expressionOperators: ['+']
+            });
+            state.computedFields.push(item);
+        }
+
+        function addExpressionOperand(cf) {
+            if (!cf.expressionOperands) cf.expressionOperands = [];
+            if (!cf.expressionOperators) cf.expressionOperators = [];
+            const lastAlias = cf.expressionOperands.length ? cf.expressionOperands[cf.expressionOperands.length - 1].tableAlias : (state.tables[0] ? state.tables[0].alias : '');
+            cf.expressionOperands.push({ tableAlias: lastAlias, columnName: '' });
+            cf.expressionOperators.push('+');
+        }
+
+        function removeComputedField(idx) {
+            state.computedFields.splice(idx, 1);
+        }
+
+        function loadDataSources() {
+            axios.get('/api/data-source/list').then(res => {
+                if (res.data && res.data.code === 200) {
+                    state.dataSources = res.data.data || [];
+                }
+            }).catch(() => {});
+        }
+
+        function onDataSourceChange() {
+            state.allTables = [];
+            state.tables = [];
+            state.columnsMap = {};
+            state.fields = [];
+            state.joins = [];
+            state.sql = '';
+            state.preview.columns = [];
+            state.preview.rows = [];
+            state.datasets = [];
+            if (!state.selectedDataSourceId) return;
+            axios.get('/api/data-source/tables', {
+                params: { dataSourceId: state.selectedDataSourceId }
+            }).then(res => {
+                if (res.data && res.data.code === 200) {
+                    state.allTables = res.data.data || [];
+                }
+            }).catch(() => {});
+
+            // 加载当前数据源下已通过多表关联创建的数据集
+            axios.get('/api/table-association/by-data-source', {
+                params: { dataSourceId: state.selectedDataSourceId }
+            }).then(res => {
+                if (res.data && res.data.code === 200) {
+                    state.datasets = res.data.data || [];
+                }
+            }).catch(() => {});
+        }
+
+        function addTable(tbl) {
+            if (!tbl || !tbl.tableName) return;
+            // 如果该表已添加，则直接重新加载字段，避免重复别名/卡片
+            const existed = state.tables.find(t => t.tableName === tbl.tableName);
+            if (existed) {
+                loadColumnsForTable(existed);
+                return;
+            }
+            const baseAlias = tbl.tableName.substring(0, 1).toLowerCase();
+            let alias = baseAlias;
+            let idx = 1;
+            const aliases = state.tables.map(t => t.alias);
+            while (aliases.includes(alias)) {
+                alias = baseAlias + (++idx);
+            }
+            const table = {
+                tableName: tbl.tableName,
+                alias,
+                x: 40 + state.tables.length * 40,
+                y: 40 + state.tables.length * 30
+            };
+            state.tables.push(table);
+            // 直接加载该表字段并同步到字段列表
+            loadColumnsForTable(table);
+        }
+
+        function removeTable(alias) {
+            state.tables = state.tables.filter(t => t.alias !== alias);
+            delete state.columnsMap[alias];
+            state.fields = state.fields.filter(f => f.tableAlias !== alias);
+            state.joins = state.joins.filter(j => j.leftTableAlias !== alias && j.rightTableAlias !== alias);
+            state.sql = '';
+            state.preview.columns = [];
+            state.preview.rows = [];
+        }
+
+        function getColumns(tbl) {
+            return state.columnsMap[tbl.alias] || [];
+        }
+
+        function getColumnsByAlias(alias) {
+            if (!alias) return [];
+            return state.columnsMap[alias] || [];
+        }
+
+        function loadColumnsForTable(tbl) {
+            if (!state.selectedDataSourceId || !tbl) return;
+            axios.get('/api/data-source/columns', {
+                params: {
+                    dataSourceId: state.selectedDataSourceId,
+                    tableName: tbl.tableName
+                }
+            }).then(res => {
+                if (res.data && res.data.code === 200) {
+                    const cols = res.data.data || [];
+                    state.columnsMap[tbl.alias] = cols;
+                    // 同步字段列表：新增该表的字段
+                    cols.forEach(col => {
+                        const key = tbl.alias + '.' + col.columnName;
+                        if (!state.fields.find(f => f.tableAlias + '.' + f.columnName === key)) {
+                            state.fields.push({
+                                tableAlias: tbl.alias,
+                                columnName: col.columnName,
+                                alias: '',
+                                orderNum: state.fields.length,
+                                selected: true
+                            });
+                        }
+                    });
+                }
+            }).catch(() => {});
+        }
+
+        function openFieldPicker() {
+            state.fieldPickerVisible = true;
+        }
+
+        function selectAllFields() {
+            state.fields.forEach(f => {
+                f.selected = true;
+            });
+        }
+
+        function invertSelectFields() {
+            state.fields.forEach(f => {
+                f.selected = !f.selected;
+            });
+        }
+
+        function toggleGroupSelect(group, checked) {
+            if (!group || !group.fields) return;
+            group.fields.forEach(f => { f.selected = !!checked; });
+        }
+
+        function cardStyle(tbl) {
+            return {
+                left: (tbl.x || 40) + 'px',
+                top: (tbl.y || 40) + 'px'
+            };
+        }
+
+        function startDrag(tbl, evt) {
+            state.dragging.alias = tbl.alias;
+            const rect = evt.currentTarget.getBoundingClientRect();
+            state.dragging.offsetX = evt.clientX - rect.left;
+            state.dragging.offsetY = evt.clientY - rect.top;
+            const moveHandler = e => {
+                if (!state.dragging.alias) return;
+                const target = state.tables.find(t => t.alias === state.dragging.alias);
+                if (!target) return;
+                const canvasRect = document.querySelector('.ta-canvas').getBoundingClientRect();
+                target.x = e.clientX - canvasRect.left - state.dragging.offsetX;
+                target.y = e.clientY - canvasRect.top - state.dragging.offsetY;
+            };
+            const upHandler = () => {
+                state.dragging.alias = null;
+                document.removeEventListener('mousemove', moveHandler);
+                document.removeEventListener('mouseup', upHandler);
+            };
+            document.addEventListener('mousemove', moveHandler);
+            document.addEventListener('mouseup', upHandler);
+        }
+
+        function buildConfig() {
+            return {
+                dataSourceId: state.selectedDataSourceId,
+                name: state.name,
+                description: state.description,
+                tables: state.tables.map(t => ({
+                    tableName: t.tableName,
+                    alias: t.alias,
+                    x: t.x,
+                    y: t.y
+                })),
+                joins: state.joins.map(j => ({
+                    joinType: j.joinType || 'INNER',
+                    leftTableAlias: j.leftTableAlias,
+                    leftField: j.leftField,
+                    rightTableAlias: j.rightTableAlias,
+                    rightField: j.rightField
+                })),
+                fields: state.fields.map((f, idx) => ({
+                    tableAlias: f.tableAlias,
+                    columnName: f.columnName,
+                    alias: f.alias,
+                    orderNum: idx,
+                    selected: f.selected
+                })),
+                computedFields: state.computedFields.map(cf => {
+                    const base = { type: cf.type || 'aggregation', alias: cf.alias, enabled: cf.enabled !== false };
+                    if (base.type === 'expression') {
+                        base.expressionOperands = (cf.expressionOperands || []).map(o => ({ tableAlias: o.tableAlias, columnName: o.columnName }));
+                        base.expressionOperators = (cf.expressionOperators || []).slice();
+                        return base;
+                    }
+                    return { ...base, func: cf.func, tableAlias: cf.tableAlias, columnName: cf.columnName };
+                }),
+                filters: (state.previewFilters || [])
+                    .filter(f => f.column && f.op && (f.value !== undefined && f.value !== ''))
+                    .map(f => {
+                        const alias = f.column;
+                        const field = state.fields.find(fd => (fd.alias || (fd.tableAlias + '_' + fd.columnName)) === alias);
+                        if (!field) return null;
+                        return { tableAlias: field.tableAlias, columnName: field.columnName, operator: f.op, value: String(f.value).trim() };
+                    })
+                    .filter(Boolean)
+            };
+        }
+
+        function refreshSql() {
+            if (!state.selectedDataSourceId) {
+                ElementPlus.ElMessage.warning('请先选择数据源');
+                return;
+            }
+            if (!state.tables.length) {
+                ElementPlus.ElMessage.warning('请至少添加一张表');
+                return;
+            }
+            state.loading = true;
+            axios.post('/api/table-association/generate-sql', {
+                config: buildConfig(),
+                forPreview: true
+            }).then(res => {
+                if (res.data && res.data.code === 200) {
+                    state.sql = (res.data.data && res.data.data.sql) || '';
+                } else {
+                    ElementPlus.ElMessage.error(res.data && res.data.msg || '生成SQL失败');
+                }
+            }).catch(err => {
+                ElementPlus.ElMessage.error('生成SQL失败：' + (err.response && err.response.data && err.response.data.msg || err.message));
+            }).finally(() => {
+                state.loading = false;
+            });
+        }
+
+        function doPreview() {
+            if (!state.sql) {
+                ElementPlus.ElMessage.warning('请先生成SQL');
+                return;
+            }
+            state.loading = true;
+            axios.post('/api/table-association/preview', {
+                config: buildConfig(),
+                limit: 50
+            }).then(res => {
+                if (res.data && res.data.code === 200 && res.data.data) {
+                    state.preview.columns = res.data.data.columns || [];
+                    state.preview.rows = res.data.data.rows || [];
+                    state.sql = res.data.data.sql || state.sql;
+                } else {
+                    ElementPlus.ElMessage.error(res.data && res.data.msg || '预览失败');
+                }
+            }).catch(err => {
+                ElementPlus.ElMessage.error('预览失败：' + (err.response && err.response.data && err.response.data.msg || err.message));
+            }).finally(() => {
+                state.loading = false;
+            });
+        }
+
+        function doSave() {
+            if (!state.sql) {
+                ElementPlus.ElMessage.warning('请先生成SQL');
+                return;
+            }
+            if (!state.name) {
+                ElementPlus.ElMessage.warning('请填写配置名称/数据集名称');
+                return;
+            }
+            if (!state.targetTableName) {
+                ElementPlus.ElMessage.warning('请输入要创建的目标表名');
+                return;
+            }
+            state.loading = true;
+            axios.post('/api/table-association/save', {
+                config: buildConfig(),
+                datasetName: state.name,
+                datasetParentId: '',
+                tableName: state.targetTableName
+            }).then(res => {
+                if (res.data && res.data.code === 200) {
+                    const datasetId = res.data.data && res.data.data.datasetId;
+                    ElementPlus.ElMessage.success('保存成功，数据集ID：' + datasetId);
+                    // 重新加载当前数据源下的已建数据集列表
+                    onDataSourceChange();
+                } else {
+                    ElementPlus.ElMessage.error(res.data && res.data.msg || '保存失败');
+                }
+            }).catch(err => {
+                ElementPlus.ElMessage.error('保存失败：' + (err.response && err.response.data && err.response.data.msg || err.message));
+            }).finally(() => {
+                state.loading = false;
+            });
+        }
+
+        // 打开某个已建数据集的详情：以弹窗形式展示建表时的关键信息
+        function openDatasetDetail(ds) {
+            if (!ds) return;
+            state.datasetDetail = ds;
+            state.datasetDetailVisible = true;
+        }
+
+        function addJoin() {
+            if (state.tables.length < 2) {
+                ElementPlus.ElMessage.warning('请先选择至少两张表');
+                return;
+            }
+            const left = state.tables[0];
+            const right = state.tables[1];
+            state.joins.push({
+                joinType: 'INNER',
+                leftTableAlias: left.alias,
+                leftField: '',
+                rightTableAlias: right.alias,
+                rightField: ''
+            });
+            // 新增时直接进入编辑态，避免只看到提示文案
+            state.editingJoinIndex = state.joins.length - 1;
+        }
+
+        function removeJoin(idx) {
+            state.joins.splice(idx, 1);
+            if (state.editingJoinIndex === idx) {
+                state.editingJoinIndex = -1;
+            } else if (state.editingJoinIndex > idx) {
+                state.editingJoinIndex -= 1;
+            }
+        }
+
+        function onJoinTableChange(join, side) {
+            if (side === 'left') {
+                join.leftField = '';
+            } else {
+                join.rightField = '';
+            }
+        }
+
+        function autoSuggestJoins() {
+            if (state.tables.length < 2) {
+                ElementPlus.ElMessage.warning('请先选择至少两张表');
+                return;
+            }
+            if (state.joins.length > 0) {
+                ElementPlus.ElMessage.info('已存在关联条件，如需重新推荐请先清空当前关联。');
+                return;
+            }
+            const t1 = state.tables[0];
+            const t2 = state.tables[1];
+            const cols1 = state.columnsMap[t1.alias] || [];
+            const cols2 = state.columnsMap[t2.alias] || [];
+            if (!cols1.length || !cols2.length) {
+                ElementPlus.ElMessage.warning('请先确保两张表的字段已加载，然后再使用智能推荐。');
+                return;
+            }
+            // 简单规则：优先找完全同名且以 id 结尾的字段
+            let pair = null;
+            for (const c1 of cols1) {
+                for (const c2 of cols2) {
+                    if (c1.columnName === c2.columnName && c1.columnName.toLowerCase().endsWith('id')) {
+                        pair = { left: c1.columnName, right: c2.columnName };
+                        break;
+                    }
+                }
+                if (pair) break;
+            }
+            // 其次：t1.id ↔ t2.{t1Name}_id
+            if (!pair) {
+                const id1 = cols1.find(c => c.columnName === 'id');
+                if (id1) {
+                    const expect = t1.tableName + '_id';
+                    const c2 = cols2.find(c => c.columnName === expect);
+                    if (c2) {
+                        pair = { left: id1.columnName, right: c2.columnName };
+                    }
+                }
+            }
+            if (!pair) {
+                ElementPlus.ElMessage.warning('暂未找到明显的关联字段，请手动新增关联条件。');
+                return;
+            }
+            state.joins.push({
+                joinType: 'INNER',
+                leftTableAlias: t1.alias,
+                leftField: pair.left,
+                rightTableAlias: t2.alias,
+                rightField: pair.right
+            });
+            ElementPlus.ElMessage.success('已根据字段名自动生成一条关联条件，可在下方编辑。');
+        }
+
+        function formatJoin(join) {
+            if (!join) return '';
+            // JOIN 方式文案
+            const jt = (join.joinType || '').toUpperCase();
+            const typeMap = {
+                'INNER': 'INNER JOIN',
+                'LEFT': 'LEFT JOIN',
+                'RIGHT': 'RIGHT JOIN'
+            };
+            const typeLabel = typeMap[jt] || (jt || 'JOIN');
+
+            // 根据别名找到表名，用「别名(表名)」展示，方便识别
+            const findTableLabel = (alias) => {
+                if (!alias) return '';
+                const t = state.tables.find(it => it.alias === alias);
+                if (t && t.tableName) {
+                    return alias + ' (' + t.tableName + ')';
+                }
+                return alias;
+            };
+
+            const leftAliasLabel = findTableLabel(join.leftTableAlias);
+            const rightAliasLabel = findTableLabel(join.rightTableAlias);
+            if (!leftAliasLabel || !rightAliasLabel || !join.leftField || !join.rightField) {
+                return '';
+            }
+            const left = leftAliasLabel + '.' + join.leftField;
+            const right = rightAliasLabel + '.' + join.rightField;
+            return typeLabel + ' ' + left + ' = ' + right;
+        }
+
+        function getJoinTypeLabel(joinType) {
+            const jt = (joinType || '').toUpperCase();
+            if (jt === 'INNER') return 'INNER JOIN';
+            if (jt === 'LEFT') return 'LEFT JOIN';
+            if (jt === 'RIGHT') return 'RIGHT JOIN';
+            return 'JOIN';
+        }
+
+        function getTableLabel(alias) {
+            if (!alias) return '';
+            const t = state.tables.find(it => it.alias === alias);
+            if (t && t.tableName) {
+                return alias + ' (' + t.tableName + ')';
+            }
+            return alias;
+        }
+
+        function formatDateTime(value) {
+            if (!value) return '';
+            // 已是 yyyy-MM-dd HH:mm:ss 直接返回
+            if (typeof value === 'string' && value.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/)) {
+                return value;
+            }
+            try {
+                const date = new Date(value);
+                if (isNaN(date.getTime())) return String(value);
+                const pad = n => String(n).padStart(2, '0');
+                const y = date.getFullYear();
+                const m = pad(date.getMonth() + 1);
+                const d = pad(date.getDate());
+                const h = pad(date.getHours());
+                const mi = pad(date.getMinutes());
+                const s = pad(date.getSeconds());
+                return `${y}-${m}-${d} ${h}:${mi}:${s}`;
+            } catch (e) {
+                return String(value);
+            }
+        }
+
+        function startEditJoin(idx) {
+            state.editingJoinIndex = idx;
+        }
+
+        function finishEditJoin() {
+            state.editingJoinIndex = -1;
+        }
+
+        function autoLayout() {
+            const baseX = 40;
+            const baseY = 40;
+            const stepX = 220;
+            const stepY = 140;
+            state.tables.forEach((t, idx) => {
+                t.x = baseX + (idx % 3) * stepX;
+                t.y = baseY + Math.floor(idx / 3) * stepY;
+            });
+        }
+
+        onMounted(() => {
+            loadDataSources();
+        });
+
+        return {
+            state,
+            filteredTables,
+            fieldsByTable,
+            filteredPreviewRows,
+            getColumnsByAlias,
+            onDataSourceChange,
+            addTable,
+            removeTable,
+            getColumns,
+            loadColumnsForTable,
+            cardStyle,
+            startDrag,
+            autoLayout,
+            refreshSql,
+            doPreview,
+            doSave,
+            addJoin,
+            removeJoin,
+            onJoinTableChange,
+            autoSuggestJoins,
+            formatJoin,
+            getJoinTypeLabel,
+            getTableLabel,
+            openDatasetDetail,
+            formatDateTime,
+            openFieldPicker,
+            selectAllFields,
+            invertSelectFields,
+            toggleGroupSelect,
+            addComputedField,
+            addExpressionField,
+            addExpressionOperand,
+            removeComputedField,
+            addPreviewFilter() {
+                state.previewFilters.push({ column: '', op: 'eq', value: '' });
+            },
+            removePreviewFilter(idx) {
+                state.previewFilters.splice(idx, 1);
+                if (!state.previewFilters.length) {
+                    state.previewFilters.push({ column: '', op: 'eq', value: '' });
+                }
+            },
+            clearPreviewFilters() {
+                state.previewFilters = [{ column: '', op: 'eq', value: '' }];
+            }
+        };
+    }
+}).use(ElementPlus).mount('#app');
+</script>
+</body>
+</html>
+

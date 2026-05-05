@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>门店登录密码管理</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"/>
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-dark bg-primary mb-3">
+    <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1">门店登录密码管理</span>
+        <a class="btn btn-outline-light btn-sm" href="/mcp/order-audit">返回订单审核</a>
+    </div>
+</nav>
+<div class="container pb-5">
+    <div id="alertBox"></div>
+
+    <div class="card mb-3">
+        <div class="card-header">全局设置</div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label class="form-label">门店默认密码（未单独设置密码的门店使用）</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="defPwd" placeholder="新默认密码"/>
+                    <button class="btn btn-primary" type="button" id="btnDefPwd">保存</button>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">管理员密码（当前密码 + 新密码）</label>
+                <input type="password" class="form-control mb-2" id="adminCur" placeholder="当前管理员密码"/>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="adminNew" placeholder="新管理员密码"/>
+                    <button class="btn btn-warning" type="button" id="btnAdminPwd">修改</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>门店账号（数据表 jm_mcp_store_login）</span>
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="btnReload">刷新列表</button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                    <tr>
+                        <th>门店编号</th>
+                        <th>门店名称</th>
+                        <th>专属密码</th>
+                        <th width="160">操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    const BASE = window.location.origin;
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function showAlert(type, msg) {
+        const el = document.getElementById('alertBox');
+        el.innerHTML = '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+            msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+    }
+
+    function postJson(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify(body || {})
+        }).then(r => r.json());
+    }
+
+    function parseJsonResponse(r) {
+        var ct = (r.headers && r.headers.get && r.headers.get('content-type')) || '';
+        if (!r.ok) {
+            return r.text().then(function (t) {
+                throw new Error(t ? ('HTTP ' + r.status + '：' + t.substring(0, 200)) : ('HTTP ' + r.status));
+            });
+        }
+        if (ct.indexOf('application/json') === -1) {
+            return r.text().then(function (t) {
+                throw new Error('非 JSON 响应（可能未登录或会话失效），请刷新页面后重试');
+            });
+        }
+        return r.json();
+    }
+
+    function loadStores() {
+        fetch(BASE + '/mcp/store-login-admin/api/stores', {credentials: 'same-origin', headers: {Accept: 'application/json'}})
+            .then(parseJsonResponse)
+            .then(d => {
+                const tb = document.getElementById('tbody');
+                tb.innerHTML = '';
+                if (Number(d.code) !== 200) {
+                    showAlert('danger', d.msg || '加载失败');
+                    return;
+                }
+                const rows = d.data || [];
+                rows.forEach(function (x) {
+                    const sid = x.storeId || '';
+                    const sn = x.storeName || '';
+                    const pwdCell = x.hasCustomPassword
+                        ? '<button type="button" class="btn btn-link btn-sm p-0 btn-view-pwd" data-store="' + escapeHtml(sid) + '">已设置（点击查看）</button>'
+                        : '<span class="text-muted small">未设置（用默认）</span>';
+                    const tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td>' + escapeHtml(sid) + '</td>' +
+                        '<td class="small">' + escapeHtml(sn || '-') + '</td>' +
+                        '<td class="small">' + pwdCell + '</td>' +
+                        '<td>' +
+                        '<div class="input-group input-group-sm">' +
+                        '<input type="password" class="form-control store-pwd" data-store="' + escapeHtml(sid) + '" placeholder="新密码，留空则清除专属"/>' +
+                        '<button class="btn btn-outline-primary btn-save" data-store="' + escapeHtml(sid) + '">保存</button>' +
+                        '</div></td>';
+                    tb.appendChild(tr);
+                });
+                document.querySelectorAll('.btn-save').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        const sid = btn.getAttribute('data-store');
+                        const inp = document.querySelector('input.store-pwd[data-store="' + sid + '"]');
+                        const v = inp ? inp.value : '';
+                        postJson(BASE + '/mcp/store-login-admin/api/store-password', {storeId: sid, newPassword: v})
+                            .then(function (r) {
+                                if (r.code === 200) {
+                                    showAlert('success', '门店 ' + sid + ' 已更新');
+                                    loadStores();
+                                } else {
+                                    showAlert('danger', r.msg || '失败');
+                                }
+                            });
+                    });
+                });
+            }).catch(function (e) {
+                showAlert('danger', (e && e.message) ? e.message : '加载门店列表失败');
+            });
+    }
+
+    document.getElementById('tbody').addEventListener('click', function (ev) {
+        var t = ev.target;
+        var btn = t && t.closest ? t.closest('button.btn-view-pwd') : null;
+        if (!btn) return;
+        var sid = btn.getAttribute('data-store');
+        if (!sid) return;
+        fetch(BASE + '/mcp/store-login-admin/api/store-password-view?storeId=' + encodeURIComponent(sid), {
+            credentials: 'same-origin',
+            headers: {Accept: 'application/json'}
+        })
+            .then(parseJsonResponse)
+            .then(function (res) {
+                if (Number(res.code) === 200 && res.data && res.data.password != null) {
+                    showAlert('info', '门店 <strong>' + escapeHtml(sid) + '</strong> 专属密码：<code class="user-select-all">' + escapeHtml(res.data.password) + '</code>');
+                } else {
+                    showAlert('danger', res.msg || '获取失败');
+                }
+            })
+            .catch(function (e) {
+                showAlert('danger', (e && e.message) ? e.message : '获取密码失败');
+            });
+    });
+
+    document.getElementById('btnReload').addEventListener('click', loadStores);
+    document.getElementById('btnDefPwd').addEventListener('click', function () {
+        const v = document.getElementById('defPwd').value;
+        postJson(BASE + '/mcp/store-login-admin/api/default-password', {newPassword: v}).then(function (r) {
+            if (r.code === 200) {
+                showAlert('success', '门店默认密码已更新');
+                document.getElementById('defPwd').value = '';
+            } else {
+                showAlert('danger', r.msg || '失败');
+            }
+        });
+    });
+    document.getElementById('btnAdminPwd').addEventListener('click', function () {
+        postJson(BASE + '/mcp/store-login-admin/api/admin-password', {
+            currentPassword: document.getElementById('adminCur').value,
+            newPassword: document.getElementById('adminNew').value
+        }).then(function (r) {
+            if (r.code === 200) {
+                showAlert('warning', r.msg || '请重新登录');
+            } else {
+                showAlert('danger', r.msg || '失败');
+            }
+        });
+    });
+    loadStores();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+# ============================================================
+# 生产环境配置 (--spring.profiles.active=prod)
+# 宝塔部署：在 Java 项目环境变量中配置 MYSQL-HOST、MYSQL-PORT、MYSQL-USER、MYSQL-PASSWORD 等
+# ============================================================
+
+server:
+  port: ${SERVER_PORT:8085}
+  tomcat:
+    max-swallow-size: -1
+  error:
+    include-exception: true
+    include-stacktrace: ALWAYS
+    include-message: ALWAYS
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  # 主数据源
+  datasource:
+    jdbc-url: jdbc:mysql://${MYSQL-HOST:localhost}:${MYSQL-PORT:3306}/jimureport?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
+    username: ${MYSQL-USER:jimureport}
+    password: ${MYSQL-PASSWORD:teFGda8PbWKEdYF3}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # Redis（服务器未部署 Redis 时请注释掉下方 data.redis 整段，否则启动会报连接失败）
+  data:
+    redis:
+      database: 0
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+# 登录账号（SecurityConfig 读取 jmreport.login.user）
+jmreport:
+  login:
+    user:
+      name: ${LOGIN_USER:admin}
+      password: ${LOGIN_PASSWORD:123456}
+    store-default-password: ${STORE_LOGIN_PASSWORD:123456}
+    store-sync-interval-ms: 1800000
+  table-association:
+    preview-query-timeout-seconds: ${JMREPORT_TA_PREVIEW_TIMEOUT_SEC:240}
+    preview-main-row-cap: ${JMREPORT_TA_PREVIEW_MAIN_CAP:1200}
+    preview-join-side-row-cap: ${JMREPORT_TA_PREVIEW_JOIN_SIDE_CAP:8000}
+    preview-dual-key-limited-join: ${JMREPORT_TA_PREVIEW_DUAL_KEY_JOIN:true}
+
+# 海典数据源（仅用于 MCP/海典相关查询，与主数据源分离）
+haidian:
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    jdbc-url: jdbc:mysql://${HAIDIAN_DB_HOST:rm-bp19ohrgc6111ynzh1o.mysql.rds.aliyuncs.com}:${HAIDIAN_DB_PORT:3306}/${HAIDIAN_DB_NAME:antis_yifengdata_hub}?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
+    username: ${HAIDIAN_DB_USER:netteam}
+    password: ${HAIDIAN_DB_PASSWORD:netteam}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: ${HAIDIAN_DB_POOL_MAX:5}
+      minimum-idle: ${HAIDIAN_DB_POOL_MIN_IDLE:1}
+      connection-timeout: ${HAIDIAN_DB_CONN_TIMEOUT_MS:10000}
+      validation-timeout: ${HAIDIAN_DB_VALIDATION_TIMEOUT_MS:3000}
+      idle-timeout: ${HAIDIAN_DB_IDLE_TIMEOUT_MS:120000}
+      max-lifetime: ${HAIDIAN_DB_MAX_LIFETIME_MS:180000}
+      keepalive-time: ${HAIDIAN_DB_KEEPALIVE_TIME_MS:60000}
+  security:
+    user:
+      name: "admin"
+      password: "123456"
+  freemarker:
+    suffix: .ftl
+    content-type: text/html
+    charset: UTF-8
+    cache: false
+    prefer-file-system-access: false
+    template-loader-path:
+      - classpath:/templates
+    template_update_delay: 0
+
+# 持久层
+minidao:
+  base-package: org.jeecg.modules.jmreport.*,org.jeecg.modules.drag.*
+
+# 积木/一丰业务配置
+jeecg:
+  uploadType: local
+  path:
+    upload: ${UPLOAD_PATH:/opt/upload}
+  oss:
+    endpoint: ""
+    accessKey: ""
+    secretKey: ""
+    bucketName: jimureport
+  minio:
+    minio_url: ""
+    minio_name: ""
+    minio_pass: ""
+    bucketName: ""
+  jmreport:
+    mail:
+      enabled: false
+      host: ""
+      sender: ""
+      username: ""
+      password: ""
+    automate:
+      export:
+        enable-auto-export: false
+        expired: 30
+    saasMode:
+    signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+    firewall:
+      dataSourceSafe: true
+      lowCodeMode: prod
+      sqlInjectionLevel: strict
+    col: 100
+    row: 200
+    apiBasePath: ${API_BASE_PATH:http://localhost:8085}
+    pageSize:
+      - 10
+      - 20
+      - 30
+      - 40
+    ai:
+      jeecg-host: http://localhost:8080/jeecgboot/
+
+logging:
+  level:
+    org.jeecg.modules.jmreport: info
+
+# 中台下单接口（/mcp/core_order_create 使用）
+middle-platform:
+  # 文档示例环境：http://test-cn.your-api-server.com
+  base-url: http://test-cn.your-api-server.com
+  # Header: X-Api-Key（文档示例值，如有正式 key 请在部署时覆盖）
+  api-key: a4f0c2b19d8e7a6c5b4a39281706ffe1d2c3b4a59687e0d1c2b3a4f59687e0d1
+  # 门店编号（文档示例：MD001）
+  store-id: MD001
+  # status: 1待接单，2待下单，3配送中，4待上传凭证（文档示例为 2）
+  default-status: 2
+
+# MCP OAuth2（client_credentials）配置
+mcp:
+  oauth:
+    enabled: true
+    client-id: ${MCP_OAUTH_CLIENT_ID:mcp-client}
+    client-secret: ${MCP_OAUTH_CLIENT_SECRET:change-me-please}
+    scope: ${MCP_OAUTH_SCOPE:mcp.read mcp.write}
+    access-token-ttl-seconds: ${MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS:-1}
+    static-access-token: ${MCP_OAUTH_STATIC_TOKEN:mcp-yifeng-fixed-bearer-7Kp9mN2xQ4vL8wR3sT6jH1gF5dC0bA}
+  # 提示音 URL 与默认路径写在 application.yml；此处勿再写空默认值，否则会覆盖主配置导致始终走内置蜂鸣

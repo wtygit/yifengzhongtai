@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API生成器 - SQL设计</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.0/dist/css/bootstrap.min.css">
+    <!-- iView CSS for icons -->
+    <link rel="stylesheet" type="text/css" href="/jmreport/desreport_/cdn/iview/iview.css">
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@0.19.2/dist/axios.min.js"></script>
+    <style>
+        .sql-editor {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            min-height: 300px;
+        }
+        .result-area {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid" id="app">
+        <input type="hidden" id="apiId" th:value="${apiId}">
+        <nav class="navbar navbar-expand-lg" style="background-color: #1890ff; color: white;">
+            <a class="navbar-brand" href="#" style="color: white;">API生成器</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav mr-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api-generator/list" style="color: white;">API列表</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api-generator/design" style="color: white;">新建表类型API</a>
+                    </li>
+                    <li th:if="${apiId == null}" class="nav-item active">
+                        <a class="nav-link" href="/api-generator/sql-design" style="color: white;">新建SQL类型API</a>
+                    </li>
+                    <li th:if="${apiId != null}" class="nav-item active">
+                        <a class="nav-link" href="#" style="color: white;">编辑SQL类型API</a>
+                    </li>
+                </ul>
+
+                <a class="jimu-logout jimu-switch mr-3" href="/jmreport/list" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                    <img src="/jmreport/desreport_/images/jimu-drag.svg" style="width: 20px; height: 20px; margin-right: 5px;"></img>
+                    进入报表工作台
+                </a>
+                <a class="jimu-logout" href="/logout" style="color: white; text-decoration: none; display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 4px; transition: background-color 0.3s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.1)'" onmouseout="this.style.backgroundColor='transparent'">
+                    <i class="ivu-icon ivu-icon-ios-power" style="font-size: 20px; margin-right: 5px;"></i>
+                    <span>退出登录</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5>SQL类型API设计</h5>
+                            </div>
+                            <div class="col-md-6 text-right">
+                                <button @click="testSql" class="btn btn-info mr-2">测试SQL</button>
+                                <button @click="saveApi" class="btn btn-primary">保存API</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- API基本信息 -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                API基本信息
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group row">
+                                    <label for="apiName" class="col-sm-2 col-form-label">API名称</label>
+                                    <div class="col-sm-10">
+                                        <input type="text" class="form-control" id="apiName" v-model="apiInfo.apiName" placeholder="请输入API名称">
+                                    </div>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="apiPath" class="col-sm-2 col-form-label">API路径</label>
+                                    <div class="col-sm-10">
+                                        <input type="text" class="form-control" id="apiPath" v-model="apiInfo.apiPath" placeholder="请输入API路径，如：/api/user/list">
+                                    </div>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="description" class="col-sm-2 col-form-label">描述</label>
+                                    <div class="col-sm-10">
+                                        <textarea class="form-control" id="description" v-model="apiInfo.description" rows="3" placeholder="请输入API描述"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SQL配置 -->
+                        <div class="card mb-4">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>SQL配置</span>
+                                <button type="button" class="btn btn-sm btn-outline-light" @click="openDatasetSelector">
+                                    使用多表关联数据集
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info" role="alert">
+                                    <strong>提示：</strong>
+                                    <ul>
+                                        <li>选择数据源后，可以编写SQL查询或增删改语句</li>
+                                        <li>支持SELECT查询语句，返回查询结果</li>
+                                        <li>支持INSERT、UPDATE、DELETE语句，返回影响行数</li>
+                                        <li>SQL中使用 #{参数名} 格式定义参数，例如：WHERE id = #{id}</li>
+                                        <li>保存后，每次调用API都会执行此SQL</li>
+                                    </ul>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="databaseName" class="col-sm-2 col-form-label">选择数据源</label>
+                                    <div class="col-sm-10">
+                                        <select class="form-control" id="databaseName" v-model="apiInfo.sqlDatabaseName">
+                                            <option value="">-- 请选择数据源（默认数据源） --</option>
+                                            <option v-for="database in databaseList" :key="database.databaseName" :value="database.databaseName">{{database.databaseName}}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group row">
+                                    <label for="sqlContent" class="col-sm-2 col-form-label">SQL语句</label>
+                                    <div class="col-sm-10">
+                                        <textarea class="form-control sql-editor" id="sqlContent" v-model="apiInfo.sqlContent" rows="15" @input="extractParams" placeholder="请输入SQL语句，例如：&#10;SELECT * FROM user WHERE id = #{id} AND status = #{status}&#10;&#10;或&#10;&#10;UPDATE user SET name = #{name} WHERE id = #{id}"></textarea>
+                                        <small class="form-text text-muted">使用 #{参数名} 格式定义参数，系统会自动提取参数并添加到下方参数列表中</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 参数配置 -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        参数配置
+                                    </div>
+                                    <div class="col-md-6 text-right">
+                                        <button @click="addParam" class="btn btn-sm btn-primary">添加参数</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-warning" role="alert">
+                                    <strong>注意：</strong>参数用于SQL的WHERE条件等传参，SQL中使用 #{参数名} 格式。系统会自动从SQL中提取参数，您也可以手动添加。
+                                </div>
+                                <table class="table table-bordered table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>参数名</th>
+                                            <th>参数类型</th>
+                                            <th>数据类型</th>
+                                            <th>默认值</th>
+                                            <th>描述</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="(param, index) in apiParams" :key="index">
+                                            <td>
+                                                <input type="text" class="form-control form-control-sm" v-model="param.paramName" placeholder="参数名">
+                                            </td>
+                                            <td>
+                                                <select class="form-control form-control-sm" v-model="param.paramType">
+                                                    <option value="query">query</option>
+                                                    <option value="path">path</option>
+                                                    <option value="body">body</option>
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <select class="form-control form-control-sm" v-model="param.dataType">
+                                                    <option value="String">String</option>
+                                                    <option value="Integer">Integer</option>
+                                                    <option value="Long">Long</option>
+                                                    <option value="Double">Double</option>
+                                                    <option value="Boolean">Boolean</option>
+                                                    <option value="Date">Date</option>
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <input type="text" class="form-control form-control-sm" v-model="param.defaultValue" placeholder="默认值">
+                                            </td>
+                                            <td>
+                                                <input type="text" class="form-control form-control-sm" v-model="param.description" placeholder="参数描述">
+                                            </td>
+                                            <td>
+                                                <button @click="removeParam(index)" class="btn btn-sm btn-danger">删除</button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="apiParams.length === 0">
+                                            <td colspan="6" class="text-center text-muted">暂无参数，请添加参数或从SQL中自动提取</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- SQL测试结果 -->
+                        <div class="card mb-4" v-if="testResult">
+                            <div class="card-header">
+                                SQL测试结果
+                            </div>
+                            <div class="card-body result-area">
+                                <div v-if="testResult.code === 200" class="alert alert-success">
+                                    <strong>执行成功！</strong>
+                                    <div v-if="testResult.result.type === 'query'">
+                                        <p>查询类型，返回 {{testResult.result.data ? testResult.result.data.length : 0}} 条记录</p>
+                                        <table class="table table-bordered table-sm" v-if="testResult.result.data && testResult.result.data.length > 0">
+                                            <thead>
+                                                <tr>
+                                                    <th v-for="key in Object.keys(testResult.result.data[0])" :key="key">{{key}}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="(row, index) in testResult.result.data" :key="index">
+                                                    <td v-for="key in Object.keys(testResult.result.data[0])" :key="key">{{row[key]}}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div v-else-if="testResult.result.type === 'update'">
+                                        <p>更新类型，影响 {{testResult.result.updateCount}} 行</p>
+                                    </div>
+                                    <div v-else>
+                                        <p>执行类型，执行成功</p>
+                                    </div>
+                                </div>
+                                <div v-else class="alert alert-danger">
+                                    <strong>执行失败：</strong>{{testResult.msg}}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 多表关联数据集选择弹窗（简单自绘模态框） -->
+    <div v-if="showTaDatasetModal" class="modal fade show" tabindex="-1" role="dialog" style="display: block; background: rgba(0,0,0,0.4);">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">选择多表关联数据集</h5>
+                    <button type="button" class="close" @click="showTaDatasetModal=false">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div v-if="taLoading" class="alert alert-info">数据加载中...</div>
+                    <div v-else-if="taError" class="alert alert-danger">{{taError}}</div>
+                    <div v-else>
+                        <div v-if="taDatasets.length === 0" class="alert alert-warning">
+                            暂无多表关联数据集，请先在「多表关联与字段组合」页面创建并保存数据集。
+                        </div>
+                        <table v-else class="table table-bordered table-hover table-sm">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"></th>
+                                    <th>名称</th>
+                                    <th>描述</th>
+                                    <th>数据源ID</th>
+                                    <th>创建时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="ds in taDatasets" :key="ds.id">
+                                    <td>
+                                        <input type="radio" name="taDataset" :value="ds.id" v-model="taSelectedDatasetId">
+                                    </td>
+                                    <td>{{ds.name}}</td>
+                                    <td>{{ds.description}}</td>
+                                    <td>{{ds.dataSourceId}}</td>
+                                    <td>{{formatDateTime(ds.createTime)}}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @click="showTaDatasetModal=false">取消</button>
+                    <button type="button" class="btn btn-primary" @click="applyTaDataset">使用所选数据集</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                apiId: '',
+                apiInfo: {
+                    apiName: '',
+                    apiPath: '',
+                    description: '',
+                    apiType: 'sql',
+                    sqlContent: '',
+                    sqlDatabaseName: ''
+                },
+                databaseList: [],
+                testResult: null,
+                apiParams: [],
+                // 多表关联数据集
+                taDatasets: [],
+                taSelectedDatasetId: '',
+                taLoading: false,
+                taError: '',
+                showTaDatasetModal: false
+            },
+            mounted() {
+                // 优先从 URL 参数获取 apiId，避免服务端未渲染隐藏域时报错
+                var match = /[?&]apiId=([^&]*)/.exec(window.location.search);
+                this.apiId = (match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : '').trim();
+                if (!this.apiId) {
+                    var el = document.getElementById('apiId');
+                    if (el && el.value) this.apiId = el.value.trim();
+                }
+                this.loadDatabaseList();
+                if (this.apiId) {
+                    this.loadApiInfo();
+                }
+            },
+            methods: {
+                loadDatabaseList() {
+                    axios.get('/api-generator/database/list')
+                        .then(response => {
+                            this.databaseList = response.data.data;
+                        })
+                        .catch(error => {
+                            alert('加载数据库列表失败：' + error.message);
+                        });
+                },
+                loadApiInfo() {
+                    axios.get('/api-generator/api/' + this.apiId)
+                        .then(response => {
+                            const data = response.data.data || {};
+                            this.apiInfo = Object.assign({
+                                apiName: '',
+                                apiPath: '',
+                                description: '',
+                                apiType: 'sql',
+                                sqlContent: '',
+                                sqlDatabaseName: '',
+                                needPagination: 0,
+                                pageSize: 20
+                            }, data.apiInfo || {});
+                            this.apiInfo.apiType = 'sql';
+                            this.apiParams = (data.apiParams || []).map(p => ({
+                                id: p.id,
+                                paramName: p.paramName || '',
+                                paramType: p.paramType || 'query',
+                                dataType: p.dataType || 'String',
+                                defaultValue: p.defaultValue || '',
+                                description: p.description || '',
+                                validateRule: p.validateRule || ''
+                            }));
+                            // 若服务端未返回参数，从SQL中提取
+                            this.extractParams();
+                        })
+                        .catch(error => {
+                            alert('加载API信息失败：' + error.message);
+                        });
+                },
+                // 多表关联数据集：打开选择弹窗
+                openDatasetSelector() {
+                    this.showTaDatasetModal = true;
+                    if (this.taDatasets.length === 0) {
+                        this.loadTaDatasets();
+                    }
+                },
+                // 加载多表关联数据集列表
+                loadTaDatasets() {
+                    this.taLoading = true;
+                    this.taError = '';
+                    axios.get('/api/table-association/dataset/list')
+                        .then(response => {
+                            if (response.data && response.data.code === 200) {
+                                this.taDatasets = response.data.data || [];
+                            } else {
+                                this.taError = (response.data && response.data.msg) || '加载数据集失败';
+                            }
+                        })
+                        .catch(error => {
+                            this.taError = error.message || '加载数据集失败';
+                        })
+                        .finally(() => {
+                            this.taLoading = false;
+                        });
+                },
+                // 选择某个多表关联数据集并填充到 SQL
+                applyTaDataset() {
+                    if (!this.taSelectedDatasetId) {
+                        alert('请选择一个多表关联数据集');
+                        return;
+                    }
+                    // 调用后端查询一次，既校验 SQL，又拿到模板 SQL
+                    this.taLoading = true;
+                    axios.get('/api/table-association/dataset/query', {
+                        params: {
+                            datasetId: this.taSelectedDatasetId,
+                            limit: 1
+                        }
+                    }).then(response => {
+                        if (response.data && response.data.code === 200 && response.data.data) {
+                            const d = response.data.data;
+                            // 使用数据集名称作为默认 API 名称（若尚未填写）
+                            if (!this.apiInfo.apiName) {
+                                this.apiInfo.apiName = d.name || '';
+                            }
+                            // 若未填写路径，给一个基于ID的默认路径（用户可修改）
+                            if (!this.apiInfo.apiPath) {
+                                this.apiInfo.apiPath = '/api/ta-dataset/' + d.id;
+                            }
+                            // SQL：简单包一层，方便后续在API里再扩展
+                            if (d.sql) {
+                                this.apiInfo.sqlContent = 'SELECT * FROM (\n' + d.sql + '\n) t';
+                                // 清空数据源，让执行走默认数据源（d.sql 内部已带 schema 前缀）
+                                this.apiInfo.sqlDatabaseName = '';
+                                // 自动从 SQL 提取参数
+                                this.extractParams();
+                                alert('已基于多表关联数据集填充SQL');
+                                this.showTaDatasetModal = false;
+                            } else {
+                                alert('所选数据集未找到SQL模板');
+                            }
+                        } else {
+                            alert((response.data && response.data.msg) || '加载数据集SQL失败');
+                        }
+                    }).catch(error => {
+                        alert('加载数据集SQL失败：' + (error.message || '未知错误'));
+                    }).finally(() => {
+                        this.taLoading = false;
+                    });
+                },
+                addParam() {
+                    this.apiParams.push({
+                        paramName: '',
+                        paramType: 'query',
+                        dataType: 'String',
+                        defaultValue: '',
+                        description: ''
+                    });
+                },
+                removeParam(index) {
+                    this.apiParams.splice(index, 1);
+                },
+                /** 从 SQL 内容中提取 #{参数名}，并合并到 apiParams（不覆盖已有参数配置） */
+                extractParams() {
+                    const sql = (this.apiInfo.sqlContent || '').trim();
+                    const regex = /#\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
+                    const names = new Set();
+                    let m;
+                    while ((m = regex.exec(sql)) !== null) {
+                        names.add(m[1]);
+                    }
+                    const existing = new Set(this.apiParams.map(p => (p.paramName || '').trim()).filter(Boolean));
+                    names.forEach(name => {
+                        if (!existing.has(name)) {
+                            this.apiParams.push({
+                                paramName: name,
+                                paramType: 'query',
+                                dataType: 'String',
+                                defaultValue: '',
+                                description: ''
+                            });
+                            existing.add(name);
+                        }
+                    });
+                },
+                testSql() {
+                    if (!this.apiInfo.sqlContent || !this.apiInfo.sqlContent.trim()) {
+                        alert('请输入SQL语句');
+                        return;
+                    }
+                    
+                    const testData = {
+                        databaseName: this.apiInfo.sqlDatabaseName || '',
+                        sql: this.apiInfo.sqlContent
+                    };
+                    
+                    axios.post('/api-generator/sql/execute', testData)
+                        .then(response => {
+                            this.testResult = response.data;
+                        })
+                        .catch(error => {
+                            this.testResult = {
+                                code: 500,
+                                msg: error.response && error.response.data ? error.response.data.msg : error.message
+                            };
+                        });
+                },
+                saveApi() {
+                    // 验证必填字段
+                    if (!this.apiInfo.apiName || !this.apiInfo.apiName.trim()) {
+                        alert('请输入API名称');
+                        return;
+                    }
+                    if (!this.apiInfo.apiPath || !this.apiInfo.apiPath.trim()) {
+                        alert('请输入API路径');
+                        return;
+                    }
+                    if (!this.apiInfo.sqlContent || !this.apiInfo.sqlContent.trim()) {
+                        alert('请输入SQL语句');
+                        return;
+                    }
+                    
+                    // 验证参数
+                    const invalidParams = this.apiParams.filter(p => !p.paramName || !p.paramName.trim());
+                    if (invalidParams.length > 0) {
+                        alert('请填写完整的参数信息（参数名不能为空）');
+                        return;
+                    }
+                    
+                    // 从SQL中提取参数，确保所有参数都已配置
+                    this.extractParams();
+                    
+                    // 准备保存数据
+                    const saveData = {
+                        apiInfo: {
+                            ...this.apiInfo,
+                            apiType: 'sql',
+                            status: 1,
+                            needPagination: 0,
+                            pageSize: 20
+                        },
+                        apiTables: [],
+                        apiFields: [],
+                        apiParams: this.apiParams.filter(p => p.paramName && p.paramName.trim())
+                    };
+                    
+                    // 保存API
+                    axios.post('/api-generator/api/save', saveData)
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                alert('保存成功');
+                                window.location.href = '/api-generator/list';
+                            } else {
+                                alert('保存失败：' + response.data.msg);
+                            }
+                        })
+                        .catch(error => {
+                            alert('保存失败：' + error.message);
+                        });
+                },
+                // 时间格式化：统一转为 yyyy-MM-dd HH:mm:ss
+                formatDateTime(dateTimeStr) {
+                    if (!dateTimeStr) {
+                        return '-';
+                    }
+                    try {
+                        if (typeof dateTimeStr === 'string' &&
+                            dateTimeStr.match(/^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$/)) {
+                            return dateTimeStr;
+                        }
+                        const d = new Date(dateTimeStr);
+                        if (isNaN(d.getTime())) {
+                            return String(dateTimeStr);
+                        }
+                        const pad = n => String(n).padStart(2, '0');
+                        const y = d.getFullYear();
+                        const m = pad(d.getMonth() + 1);
+                        const day = pad(d.getDate());
+                        const h = pad(d.getHours());
+                        const mi = pad(d.getMinutes());
+                        const s = pad(d.getSeconds());
+                        return `${y}-${m}-${day} ${h}:${mi}:${s}`;
+                    } catch (e) {
+                        return String(dateTimeStr);
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

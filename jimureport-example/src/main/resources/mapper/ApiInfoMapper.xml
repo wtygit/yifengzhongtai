@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jeecg.modules.jmreport.mapper.ApiInfoMapper">
+    <insert id="insert" parameterType="com.jeecg.modules.jmreport.entity.ApiInfo">
+        INSERT INTO api_info (id, api_name, api_path, description, create_by, create_time, update_time, status, api_type, sql_content, sql_database_name, need_pagination, page_size)
+        VALUES (#{id}, #{apiName}, #{apiPath}, #{description}, #{createBy}, #{createTime}, #{updateTime}, #{status}, #{apiType}, #{sqlContent}, #{sqlDatabaseName}, #{needPagination}, #{pageSize})
+    </insert>
+    
+    <update id="updateById" parameterType="com.jeecg.modules.jmreport.entity.ApiInfo">
+        UPDATE api_info
+        SET api_name = #{apiName},
+            api_path = #{apiPath},
+            description = #{description},
+            create_by = #{createBy},
+            update_time = #{updateTime},
+            status = #{status},
+            api_type = #{apiType},
+            sql_content = #{sqlContent},
+            sql_database_name = #{sqlDatabaseName},
+            need_pagination = #{needPagination},
+            page_size = #{pageSize}
+        WHERE id = #{id}
+    </update>
+    
+    <delete id="deleteById" parameterType="java.lang.String">
+        DELETE FROM api_info WHERE id = #{id}
+    </delete>
+    
+    <select id="selectListByCondition" resultType="com.jeecg.modules.jmreport.entity.ApiInfo">
+        SELECT * FROM api_info
+        <where>
+            <if test="apiName != null and apiName != ''">
+                AND api_name LIKE CONCAT('%', #{apiName}, '%')
+            </if>
+            <if test="apiPath != null and apiPath != ''">
+                AND api_path LIKE CONCAT('%', #{apiPath}, '%')
+            </if>
+        </where>
+        ORDER BY create_time DESC
+    </select>
+</mapper>

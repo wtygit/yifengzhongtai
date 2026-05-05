@@ -1,0 +1,201 @@
+server:
+  port: 8085
+  tomcat:
+    max-swallow-size: -1
+  error:
+    include-exception: true
+    include-stacktrace: ALWAYS
+    include-message: ALWAYS
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+  # 本地报表库数据源（系统自身使用）
+  datasource:
+    jdbc-url: jdbc:mysql://${MYSQL-HOST:localhost}:${MYSQL-PORT:3306}/jimureport?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
+#    username: ${MYSQL-USER:root}
+#    password: ${MYSQL-PASSWORD:123456}
+    username: ${MYSQL-USER:jimureport}
+    password: ${MYSQL-PASSWORD:teFGda8PbWKEdYF3}
+    # teFGda8PbWKEdYF3
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  #Redis配置
+  data:
+    redis:
+      database: 0
+      host: 127.0.0.1
+      port: 6379
+      password:
+
+# 登录账号（SecurityConfig 读取 jmreport.login.user）
+jmreport:
+  login:
+    # 登录成功且未带 redirect 参数时的跳转。默认 /jmreport/list 依赖本机 jimureport 库；若主库未启动导致 500，可临时改为 /mcp/order-audit
+    success-redirect: ${JMREPORT_LOGIN_SUCCESS_REDIRECT:/jmreport/list}
+    user:
+      name: admin
+      password: "123456"
+    # 门店号登录：用户名=门店编号（与海典 corecmsstore 同步至本地 jm_mcp_store_login），密码为下列统一口令
+    store-default-password: "123456"
+    # 海典门店表同步到本地间隔（毫秒），默认 30 分钟
+    store-sync-interval-ms: 1800000
+  table-association:
+    # 多表关联「刷新预览」SQL 执行超时（秒）；0 表示不设置（慎用大 JOIN）
+    preview-query-timeout-seconds: 240
+    # 预览时对 FROM 第一张表最多取多少行再 JOIN（仅预览执行；保存数据集仍为全量 SQL）。0 表示关闭抽样。
+    preview-main-row-cap: 1200
+    # 预览时右表 LIMIT（与 preview-dual-key-limited-join 或 IN 裁剪路径配合）。0 表示不对右表做此行数上限。
+    preview-join-side-row-cap: 8000
+    # 仅两表单 INNER 等值关联时，用「两侧 ORDER BY 关联键 + LIMIT」代替 EXISTS/IN，减轻大表超时
+    preview-dual-key-limited-join: true
+
+haidian:
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    jdbc-url: jdbc:mysql://${HAIDIAN_DB_HOST:rm-bp19ohrgc6111ynzh1o.mysql.rds.aliyuncs.com}:${HAIDIAN_DB_PORT:3306}/${HAIDIAN_DB_NAME:antis_yifengdata_hub}?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
+    username: ${HAIDIAN_DB_USER:netteam}
+    password: ${HAIDIAN_DB_PASSWORD:netteam}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 解决偶发 "No operations allowed after connection closed"：
+      # MySQL/RDS 可能提前断开空闲连接，缩短 maxLifetime 并启用 keepalive 让连接在被服务端回收前刷新。
+      maximum-pool-size: ${HAIDIAN_DB_POOL_MAX:5}
+      # 至少保留 1 条 idle，keepalive 才能持续刷新连接避免被服务端回收后再校验报 WARN
+      minimum-idle: ${HAIDIAN_DB_POOL_MIN_IDLE:1}
+      connection-timeout: ${HAIDIAN_DB_CONN_TIMEOUT_MS:10000}
+      validation-timeout: ${HAIDIAN_DB_VALIDATION_TIMEOUT_MS:3000}
+      idle-timeout: ${HAIDIAN_DB_IDLE_TIMEOUT_MS:120000}
+      # 缩短 maxLifetime，让连接在被服务端/网络提前断开前主动轮换，减少 "connection closed" 校验告警
+      max-lifetime: ${HAIDIAN_DB_MAX_LIFETIME_MS:180000}
+      keepalive-time: ${HAIDIAN_DB_KEEPALIVE_TIME_MS:60000}
+  # 登录认证配置
+  security:
+    #是否开启登录认证
+    user:
+      name: "admin"
+      password: "123456"
+  #配置freemarker
+  freemarker:
+    # 设置模板后缀名
+    suffix: .ftl
+    # 设置文档类型
+    content-type: text/html
+    # 设置页面编码格式
+    charset: UTF-8
+    # 设置页面缓存
+    cache: false
+    prefer-file-system-access: false
+    # 设置ftl文件路径
+    template-loader-path:
+      - classpath:/templates
+    template_update_delay: 0
+# MyBatis Mapper XML 路径（确保 JmTableAssociationMapper 等 XML 被加载）
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.jeecg.modules.jmreport.entity
+#持久层框架
+minidao:
+  base-package: org.jeecg.modules.jmreport.*,org.jeecg.modules.drag.*
+jeecg:
+  # local|minio|alioss
+  uploadType: local
+  # local
+  path:
+    #文件路径
+    upload: /opt/upload
+  # alioss
+  oss:
+    endpoint: ??
+    accessKey: ??
+    secretKey: ??
+    bucketName: jimureport
+  # minio
+  minio:
+    minio_url: http://minio.jeecg.com
+    minio_name: ??
+    minio_pass: ??
+    bucketName: ??
+  #大屏报表参数设置
+  jmreport:
+    # 邮件发送
+    mail:
+      # 是否开启
+      enabled: false
+      host: "???"
+      sender: "???"
+      username: "??@??.com"
+      password: "???"
+      # 是否开启ssl
+      #      ssl: true
+      # smtp端口
+    #      port: 465
+    # 自动化导出（关闭则启动不查 jimu_report_export_job；需用定时导出时改为 true 并确保库内有该表）
+    automate:
+      export:
+        enable-auto-export: false
+        expired: 30
+    #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离)
+    saasMode:
+    # 签名密钥
+    signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
+    # 平台上线安全配置
+    firewall:
+      # 数据源安全 (开启后，不允许使用平台数据源、SQL解析加签并且不允许查询数据库)
+      dataSourceSafe: true
+      # 低代码开发模式（dev:开发模式，prod:发布模式—关闭在线报表设计功能，分配角色admin、lowdeveloper可放开限制）
+      lowCodeMode: prod
+      # sql注入检查级别（strict:严格, basic:简单校验, none:不校验）
+      sqlInjectionLevel: strict
+    # 展示列数
+    col: 100
+    # 展示行数
+    row: 200
+    #自定义API接口的前缀 #{api_base_path}和#{domainURL}的值
+    apiBasePath: http://localhost:8085
+    pageSize:
+      - 10
+      - 20
+      - 30
+      - 40
+    ai:
+      jeecg-host: http://localhost:8080/jeecgboot/
+yunwu:
+  base-url: https://yunwu.ai/v1/chat/completions
+  # 请不要把真实 key 提交到代码仓库，可通过环境变量 YUNWU_API_KEY 注入
+  # sk-lI3QY06uPrDsVVL16mjZftfmartq9peINATCWvrD4VvGLWS1
+  api-key: ${YUNWU_API_KEY:sk-lI3QY06uPrDsVVL16mjZftfmartq9peINATCWvrD4VvGLWS1}
+  model: gpt-4.1-mini-2025-04-14
+# 中台下单接口（/mcp/core_order_create 使用）
+middle-platform:
+  # 文档示例环境：http://test-cn.your-api-server.com
+  base-url: https://www.yifenglikang.com
+  # Header: X-Api-Key（文档示例值，如有正式 key 请在部署时覆盖）
+  api-key: a4f0c2b19d8e7a6c5b4a39281706ffe1d2c3b4a59687e0d1c2b3a4f59687e0d1
+  # 门店编号（文档示例：MD001）
+  store-id: MD001
+  # status: 1待接单，2待下单，3配送中，4待上传凭证（文档示例为 2）
+  default-status: 2
+
+# MCP OAuth2（client_credentials）配置
+mcp:
+  oauth:
+    enabled: true
+    client-id: ${MCP_OAUTH_CLIENT_ID:mcp-client}
+    client-secret: ${MCP_OAUTH_CLIENT_SECRET:change-me-please}
+    scope: ${MCP_OAUTH_SCOPE:mcp.read mcp.write}
+    access-token-ttl-seconds: ${MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS:-1}
+    # 固定 Bearer，调用方直接使用：Authorization: Bearer <值>（可不调用 core_oauth_token）
+    static-access-token: ${MCP_OAUTH_STATIC_TOKEN:mcp-yifeng-fixed-bearer-7Kp9mN2xQ4vL8wR3sT6jH1gF5dC0bA}
+  # 订单审核页提示音：填写音频 URL（相对站点根路径如 /sounds/mcp/new.mp3，或 https 绝对地址）；留空则用内置蜂鸣
+  order-audit:
+    sound-new-url: ${MCP_ORDER_AUDIT_SOUND_NEW:/sounds/mcp-order-audit/2026040611343499593409.mp3}
+    sound-merged-url: ${MCP_ORDER_AUDIT_SOUND_MERGED:/sounds/mcp-order-audit/2026040611373197091061.mp3}
+    sound-save-url: ${MCP_ORDER_AUDIT_SOUND_SAVE:}
+    # 发货登记提示音（与订单提示音区分开）
+    shipment-sound-new-url: ${MCP_ORDER_AUDIT_SHIPMENT_SOUND_NEW:/sounds/mcp-order-audit/2026041705094050526886.mp3}
+    shipment-sound-merged-url: ${MCP_ORDER_AUDIT_SHIPMENT_SOUND_MERGED:/sounds/mcp-order-audit/2026041705105936919158.mp3}
+#输出sql日志
+logging:
+  level:
+    org.jeecg.modules.jmreport: info

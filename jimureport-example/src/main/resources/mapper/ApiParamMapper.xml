@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jeecg.modules.jmreport.mapper.ApiParamMapper">
+    <insert id="insert" parameterType="com.jeecg.modules.jmreport.entity.ApiParam">
+        INSERT INTO api_param (id, api_id, param_name, param_type, data_type, default_value, description, validate_rule)
+        VALUES (#{id}, #{apiId}, #{paramName}, #{paramType}, #{dataType}, #{defaultValue}, #{description}, #{validateRule})
+    </insert>
+    
+    <update id="updateById" parameterType="com.jeecg.modules.jmreport.entity.ApiParam">
+        UPDATE api_param
+        SET api_id = #{apiId},
+            param_name = #{paramName},
+            param_type = #{paramType},
+            data_type = #{dataType},
+            default_value = #{defaultValue},
+            description = #{description},
+            validate_rule = #{validateRule}
+        WHERE id = #{id}
+    </update>
+    
+    <delete id="deleteByApiId" parameterType="java.lang.String">
+        DELETE FROM api_param WHERE api_id = #{apiId}
+    </delete>
+</mapper>

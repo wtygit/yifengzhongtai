@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>报表工作台 - 一丰中台</title>
+    <link rel="stylesheet" type="text/css" href="/jmreport/desreport_/cdn/iview/iview.css">
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .jimu-header { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 50px; background: #1890ff; color: white; }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .header-right a { color: white; text-decoration: none; }
+        #report-list-container { width: 100%; height: calc(100vh - 50px); border: none; }
+    </style>
+</head>
+<body>
+    <div class="jimu-header">
+        <span class="jimu-header">一丰中台</span>
+        <span class="header-right">
+            <a href="/jmreport/list" class="jimu-logout jimu-switch">报表工作台</a>
+            <a href="/table-association">多表关联建模</a>
+            <a href="/api-generator/list">进入api工作台</a>
+            <a href="/mcp/order-audit">MCP订单审核</a>
+            <a href="/logout">退出登录</a>
+        </span>
+    </div>
+    <!-- 报表列表由 JimuReport 静态资源加载 -->
+    <iframe id="report-list-container" src="/jmreport/desreport_/" title="报表列表"></iframe>
+    <script>
+        (function() {
+            var iframe = document.getElementById('report-list-container');
+            iframe.onerror = function() {};
+            iframe.onload = function() {
+                try {
+                    if (iframe.contentWindow.location.href === 'about:blank' || iframe.contentDocument.body.innerText.indexOf('404') !== -1) {
+                        iframe.style.display = 'none';
+                        var div = document.createElement('div');
+                        div.style.cssText = 'padding: 40px; text-align: center;';
+                        div.innerHTML = '<p>报表列表加载中…</p><p>若长时间未显示，请确认 JimuReport 依赖已正确引入且静态资源路径 <code>/jmreport/desreport_/</code> 可访问。</p>';
+                        document.body.appendChild(div);
+                    }
+                } catch (e) {}
+            };
+        })();
+    </script>
+</body>
+</html>
