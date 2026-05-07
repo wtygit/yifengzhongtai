@@ -641,13 +641,85 @@
                     </div>
                 </div>
 
+                <div class="ta-section-title">SQL WHERE（写入生成 SQL）</div>
+                <div class="ta-empty-hint" style="border:none;padding:4px 0 10px;font-size:12px;">
+                    以下条件参与「生成 SQL」中的 WHERE；与下方「结果内筛选」不同，后者只在已返回的数据上过滤。
+                </div>
+                <div class="ta-sql-cond-block" style="margin-bottom: 12px;">
+                    <template v-for="(wf, widx) in state.sqlWhereConditions" :key="'sw-' + widx">
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+                            <el-select v-model="wf.tableAlias" placeholder="表" size="small" style="width:140px;" @change="wf.columnName = ''">
+                                <el-option
+                                        v-for="t in state.tables"
+                                        :key="'sw-t-' + widx + '-' + t.alias"
+                                        :label="t.alias + ' · ' + t.tableName"
+                                        :value="t.alias">
+                                </el-option>
+                            </el-select>
+                            <el-select v-model="wf.columnName" placeholder="列" size="small" style="min-width:150px;flex:1;">
+                                <el-option
+                                        v-for="col in getColumnsByAlias(wf.tableAlias)"
+                                        :key="col.columnName"
+                                        :label="col.columnName"
+                                        :value="col.columnName">
+                                </el-option>
+                            </el-select>
+                            <el-select v-model="wf.op" size="small" style="width:110px;">
+                                <el-option label="=" value="eq"></el-option>
+                                <el-option label="≠" value="neq"></el-option>
+                                <el-option label="包含" value="contains"></el-option>
+                                <el-option label="不包含" value="not_contains"></el-option>
+                                <el-option label="&gt;" value="gt"></el-option>
+                                <el-option label="&gt;=" value="gte"></el-option>
+                                <el-option label="&lt;" value="lt"></el-option>
+                                <el-option label="&lt;=" value="lte"></el-option>
+                            </el-select>
+                            <el-input v-model="wf.value" placeholder="比较值（文本/日期等会按规则加引号后写入 SQL）" size="small" style="min-width:180px;flex:1.2;"></el-input>
+                            <el-button v-if="state.sqlWhereConditions.length > 1" type="danger" link size="small" @click="removeSqlWhereRow(widx)">删除</el-button>
+                        </div>
+                    </template>
+                    <el-button type="primary" link size="small" @click="addSqlWhereRow">新增 WHERE 条件</el-button>
+                    <el-button link size="small" @click="clearSqlWhere">清空 WHERE</el-button>
+                </div>
+
+                <div class="ta-section-title">SQL GROUP BY（可选）</div>
+                <div class="ta-empty-hint" style="border:none;padding:4px 0 10px;font-size:12px;">
+                    填写后生成 <code style="background:#f1f5f9;padding:0 4px;border-radius:4px;">GROUP BY 表.列</code>。
+                    有聚合计算字段时：若此处为空，仍按当前勾选的<strong>全部普通字段</strong>自动分组；若填写则以这里为准。
+                </div>
+                <div class="ta-sql-cond-block" style="margin-bottom: 12px;">
+                    <template v-for="(gf, gidx) in state.sqlGroupByFields" :key="'gb-' + gidx">
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px;">
+                            <el-select v-model="gf.tableAlias" placeholder="表" size="small" style="width:140px;" @change="gf.columnName = ''">
+                                <el-option
+                                        v-for="t in state.tables"
+                                        :key="'gb-t-' + gidx + '-' + t.alias"
+                                        :label="t.alias + ' · ' + t.tableName"
+                                        :value="t.alias">
+                                </el-option>
+                            </el-select>
+                            <el-select v-model="gf.columnName" placeholder="列" size="small" style="min-width:160px;flex:1;">
+                                <el-option
+                                        v-for="col in getColumnsByAlias(gf.tableAlias)"
+                                        :key="col.columnName"
+                                        :label="col.columnName"
+                                        :value="col.columnName">
+                                </el-option>
+                            </el-select>
+                            <el-button v-if="state.sqlGroupByFields.length > 1" type="danger" link size="small" @click="removeGroupByRow(gidx)">删除</el-button>
+                        </div>
+                    </template>
+                    <el-button type="primary" link size="small" @click="addGroupByRow">新增分组列</el-button>
+                    <el-button link size="small" @click="clearGroupBy">清空 GROUP BY</el-button>
+                </div>
+
                 <div class="ta-section-title">当前结果</div>
                 <div v-if="!state.preview.rows.length" class="ta-empty-hint">
-                    生成 SQL 后点击右上角「刷新预览」，这里将展示前 50 行数据。
+                    配置字段与关联后，可先设置上方 SQL WHERE / GROUP BY，再点「生成 SQL」，然后点「刷新预览」查看前 50 行。
                 </div>
                 <template v-else>
                     <div class="ta-preview-filter-bar">
-                        <span class="ta-filter-label">筛选条件</span>
+                        <span class="ta-filter-label">结果内筛选</span>
                         <el-form inline size="small" class="ta-preview-filter-form">
                             <el-form-item v-for="(f, idx) in state.previewFilters" :key="idx">
                                 <el-select v-model="f.column" placeholder="字段" style="width: 140px; margin-right: 6px;">
@@ -880,7 +952,14 @@ createApp({
                 columns: [],
                 rows: []
             },
-            // 预览结果本地筛选条件（Navicat 风格）
+            // 写入生成 SQL 的 WHERE / GROUP BY
+            sqlWhereConditions: [
+                { tableAlias: '', columnName: '', op: 'eq', value: '' }
+            ],
+            sqlGroupByFields: [
+                { tableAlias: '', columnName: '' }
+            ],
+            // 预览结果本地筛选（仅表格展示，不写进 SQL）
             previewFilters: [
                 { column: '', op: 'eq', value: '' }
             ],
@@ -1212,16 +1291,45 @@ createApp({
                     }
                     return { ...base, func: cf.func, tableAlias: cf.tableAlias, columnName: cf.columnName };
                 }),
-                filters: (state.previewFilters || [])
-                    .filter(f => f.column && f.op && (f.value !== undefined && f.value !== ''))
-                    .map(f => {
-                        const alias = f.column;
-                        const field = state.fields.find(fd => (fd.alias || (fd.tableAlias + '_' + fd.columnName)) === alias);
-                        if (!field) return null;
-                        return { tableAlias: field.tableAlias, columnName: field.columnName, operator: f.op, value: String(f.value).trim() };
-                    })
-                    .filter(Boolean)
+                filters: (state.sqlWhereConditions || [])
+                    .filter(f => f.tableAlias && f.columnName && f.op && (f.value !== undefined && String(f.value).trim() !== ''))
+                    .map(f => ({
+                        tableAlias: f.tableAlias,
+                        columnName: f.columnName,
+                        operator: f.op,
+                        value: String(f.value).trim()
+                    })),
+                groupByFields: (state.sqlGroupByFields || [])
+                    .filter(g => g.tableAlias && g.columnName)
+                    .map(g => ({ tableAlias: g.tableAlias, columnName: g.columnName }))
             };
+        }
+
+        function addSqlWhereRow() {
+            const t = state.tables[0];
+            state.sqlWhereConditions.push({ tableAlias: t ? t.alias : '', columnName: '', op: 'eq', value: '' });
+        }
+        function removeSqlWhereRow(idx) {
+            state.sqlWhereConditions.splice(idx, 1);
+            if (!state.sqlWhereConditions.length) {
+                state.sqlWhereConditions.push({ tableAlias: (state.tables[0] && state.tables[0].alias) || '', columnName: '', op: 'eq', value: '' });
+            }
+        }
+        function clearSqlWhere() {
+            state.sqlWhereConditions = [{ tableAlias: (state.tables[0] && state.tables[0].alias) || '', columnName: '', op: 'eq', value: '' }];
+        }
+        function addGroupByRow() {
+            const t = state.tables[0];
+            state.sqlGroupByFields.push({ tableAlias: t ? t.alias : '', columnName: '' });
+        }
+        function removeGroupByRow(idx) {
+            state.sqlGroupByFields.splice(idx, 1);
+            if (!state.sqlGroupByFields.length) {
+                state.sqlGroupByFields.push({ tableAlias: (state.tables[0] && state.tables[0].alias) || '', columnName: '' });
+            }
+        }
+        function clearGroupBy() {
+            state.sqlGroupByFields = [{ tableAlias: (state.tables[0] && state.tables[0].alias) || '', columnName: '' }];
         }
 
         function refreshSql() {
@@ -1543,7 +1651,13 @@ createApp({
             },
             clearPreviewFilters() {
                 state.previewFilters = [{ column: '', op: 'eq', value: '' }];
-            }
+            },
+            addSqlWhereRow,
+            removeSqlWhereRow,
+            clearSqlWhere,
+            addGroupByRow,
+            removeGroupByRow,
+            clearGroupBy
         };
     }
 }).use(ElementPlus).mount('#app');

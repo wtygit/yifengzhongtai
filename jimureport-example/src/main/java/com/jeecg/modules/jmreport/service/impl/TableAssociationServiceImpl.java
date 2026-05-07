@@ -416,8 +416,26 @@ public class TableAssociationServiceImpl implements TableAssociationService {
             sql.append(String.join(" AND ", whereParts));
         }
 
-        // 4) 如果存在聚合字段，则自动拼接 GROUP BY
-        if (hasAggregates && !groupByColumns.isEmpty()) {
+        // 4) GROUP BY：显式配置优先（物理 表.列）；否则在存在聚合时按勾选普通字段的输出别名分组
+        List<AssociationConfigDto.GroupByFieldDto> gbList =
+                config.getGroupByFields() == null ? Collections.emptyList() : config.getGroupByFields();
+        List<String> explicitGroupBy = new ArrayList<>();
+        for (AssociationConfigDto.GroupByFieldDto g : gbList) {
+            if (g == null || g.getTableAlias() == null || g.getColumnName() == null) {
+                continue;
+            }
+            if (!isSafeAlias(g.getTableAlias()) || !aliasToTable.containsKey(g.getTableAlias())) {
+                throw new IllegalArgumentException("GROUP BY 表别名不存在: " + g.getTableAlias());
+            }
+            if (!isSafeName(g.getColumnName())) {
+                throw new IllegalArgumentException("GROUP BY 字段名非法: " + g.getColumnName());
+            }
+            explicitGroupBy.add(q(g.getTableAlias()) + "." + q(g.getColumnName()));
+        }
+        if (!explicitGroupBy.isEmpty()) {
+            sql.append(" GROUP BY ");
+            sql.append(String.join(", ", explicitGroupBy));
+        } else if (hasAggregates && !groupByColumns.isEmpty()) {
             sql.append(" GROUP BY ");
             for (int i = 0; i < groupByColumns.size(); i++) {
                 String col = groupByColumns.get(i);
@@ -485,6 +503,13 @@ public class TableAssociationServiceImpl implements TableAssociationService {
                 } else if (targetAlias.equals(cf.getTableAlias()) && cf.getColumnName() != null
                         && !"*".equals(cf.getColumnName()) && isSafeName(cf.getColumnName())) {
                     cols.add(cf.getColumnName());
+                }
+            }
+        }
+        if (config.getGroupByFields() != null) {
+            for (AssociationConfigDto.GroupByFieldDto g : config.getGroupByFields()) {
+                if (g != null && targetAlias.equals(g.getTableAlias()) && isSafeName(g.getColumnName())) {
+                    cols.add(g.getColumnName());
                 }
             }
         }

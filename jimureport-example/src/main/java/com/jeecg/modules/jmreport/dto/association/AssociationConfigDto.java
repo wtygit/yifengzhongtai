@@ -23,6 +23,8 @@ public class AssociationConfigDto {
     private List<ComputedFieldDto> computedFields;
     /** 筛选条件（参与 SQL WHERE，如时间、状态等） */
     private List<FilterDto> filters;
+    /** 显式 GROUP BY：表别名 + 物理列；有聚合时若非空则按此处分组，否则仍按「全部勾选普通字段」的输出别名分组 */
+    private List<GroupByFieldDto> groupByFields;
 
     @Data
     public static class TableDto {
@@ -88,6 +90,13 @@ public class AssociationConfigDto {
         /** 操作符：eq, neq, gt, gte, lt, lte, contains, not_contains */
         private String operator;
         private String value;
+    }
+
+    /** GROUP BY 一项：物理表别名 + 列名 */
+    @Data
+    public static class GroupByFieldDto {
+        private String tableAlias;
+        private String columnName;
     }
 }
 
