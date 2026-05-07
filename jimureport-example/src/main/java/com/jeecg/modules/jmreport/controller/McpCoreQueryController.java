@@ -266,14 +266,15 @@ public class McpCoreQueryController {
             @RequestParam(required = false) String patientPhone,
             @RequestParam(required = false) String patientIdCard,
             @RequestParam(required = false) String groupName,
+            @RequestParam(required = false) String storeId,
             @RequestParam(required = false) String createDateStart,
             @RequestParam(required = false) String createDateEnd,
             @RequestParam(required = false) String createTimeStart,
             @RequestParam(required = false) String createTimeEnd,
             @RequestParam(required = false) String requestTriggerType) {
-        log.info("MCP order-audit-list 请求，status={}, groupToken={}, pendingId={}, patientName={}, patientPhone={}, patientIdCard={}, groupName={}, createDateStart={}, createDateEnd={}, createTimeStart={}, createTimeEnd={}, requestTriggerType={}",
-                status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType);
-        return mcpCoreQueryService.getOrderAuditList(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName,
+        log.info("MCP order-audit-list 请求，status={}, groupToken={}, pendingId={}, patientName={}, patientPhone={}, patientIdCard={}, groupName={}, storeId={}, createDateStart={}, createDateEnd={}, createTimeStart={}, createTimeEnd={}, requestTriggerType={}",
+                status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, storeId, createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType);
+        return mcpCoreQueryService.getOrderAuditList(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, storeId,
                 createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType);
     }
 
@@ -301,6 +302,14 @@ public class McpCoreQueryController {
     @GetMapping("/patient-education-options")
     public Map<String, Object> listPatientEducationOptions() {
         return mcpCoreQueryService.listPatientEducationOptions();
+    }
+
+    /**
+     * 海典库 hospitallist：按关键字模糊查医院名称（keyword 可空，返回前 100 条）
+     */
+    @GetMapping("/hospital-list")
+    public Map<String, Object> searchHospitalList(@RequestParam(required = false) String keyword) {
+        return mcpCoreQueryService.searchHospitalList(keyword);
     }
 
     /**

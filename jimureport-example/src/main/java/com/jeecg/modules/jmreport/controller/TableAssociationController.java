@@ -42,7 +42,8 @@ public class TableAssociationController {
 
     @PostMapping("/preview")
     public Map<String, Object> preview(@RequestBody PreviewRequest request) {
-        return tableAssociationService.preview(request != null ? request.getConfig() : null, request != null ? request.getLimit() : null);
+        return tableAssociationService.preview(request != null ? request.getConfig() : null, request != null ? request.getLimit() : null,
+                request != null ? request.getCustomSql() : null);
     }
 
     @PostMapping("/save")
@@ -50,7 +51,8 @@ public class TableAssociationController {
         if (request == null) {
             return ApiResult.error(400, "request不能为空");
         }
-        return tableAssociationService.saveAsDataset(request.getConfig(), request.getDatasetName(), request.getDatasetParentId(), request.getTableName());
+        return tableAssociationService.saveAsDataset(request.getConfig(), request.getDatasetName(), request.getDatasetParentId(), request.getTableName(),
+                request.getCustomSql());
     }
 
     /**

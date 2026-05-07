@@ -109,6 +109,7 @@ public interface McpCoreQueryService {
      */
     Map<String, Object> getOrderAuditList(String status, String groupToken,
                                           String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
+                                          String storeId,
                                           String createDateStart, String createDateEnd,
                                           String createTimeStart, String createTimeEnd,
                                           String requestTriggerType);
@@ -132,6 +133,11 @@ public interface McpCoreQueryService {
      * 患教下拉选项（来自海典 corecmsuser，userType 为「患教」或「销售&患教」）
      */
     Map<String, Object> listPatientEducationOptions();
+
+    /**
+     * 海典同步库 hospitallist 医院名称模糊查询（仅返回名称列表，供审核页 datalist）
+     */
+    Map<String, Object> searchHospitalList(String keyword);
 
     /**
      * 新增或更新群配置（body 含 id 可选、groupName 必填、segmentWords 为字符串数组）

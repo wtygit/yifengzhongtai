@@ -54,4 +54,9 @@ public interface McpStoreLoginService {
      * 读取门店专属密码明文（login_password）；未设置时返回 null。仅应由管理员接口调用。
      */
     String getStoreCustomPasswordPlain(String storeId);
+
+    /**
+     * 手动新增或更新门店账号（写入 jm_mcp_store_login），用于海典尚未同步到的门店号。
+     */
+    int upsertStoreAccount(String storeId, String storeName);
 }

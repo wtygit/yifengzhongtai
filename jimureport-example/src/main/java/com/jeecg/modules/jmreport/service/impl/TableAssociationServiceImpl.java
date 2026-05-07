@@ -574,22 +574,31 @@ public class TableAssociationServiceImpl implements TableAssociationService {
     }
 
     @Override
-    public Map<String, Object> preview(AssociationConfigDto config, Integer limit) {
+    public Map<String, Object> preview(AssociationConfigDto config, Integer limit, String customSql) {
         int lim = (limit == null || limit <= 0 || limit > 200) ? 50 : limit;
+        final boolean useCustom = customSql != null && !customSql.trim().isEmpty();
         final String canonicalSql;
-        try {
-            canonicalSql = buildAssociationSql(config, true, null);
-        } catch (IllegalArgumentException e) {
-            return Map.of("code", 400, "msg", e.getMessage(), "data", null);
+        if (useCustom) {
+            canonicalSql = stripTrailingSemicolon(customSql.trim());
+        } else {
+            try {
+                canonicalSql = buildAssociationSql(config, true, null);
+            } catch (IllegalArgumentException e) {
+                return Map.of("code", 400, "msg", e.getMessage(), "data", null);
+            }
         }
 
         final String execSql;
-        try {
-            execSql = previewMainRowCap > 0
-                    ? buildAssociationSql(config, true, previewMainRowCap)
-                    : canonicalSql;
-        } catch (IllegalArgumentException e) {
-            return Map.of("code", 400, "msg", e.getMessage(), "data", null);
+        if (useCustom) {
+            execSql = canonicalSql;
+        } else {
+            try {
+                execSql = previewMainRowCap > 0
+                        ? buildAssociationSql(config, true, previewMainRowCap)
+                        : canonicalSql;
+            } catch (IllegalArgumentException e) {
+                return Map.of("code", 400, "msg", e.getMessage(), "data", null);
+            }
         }
 
         Map<String, Object> valid = validateSql(execSql);
@@ -664,7 +673,7 @@ public class TableAssociationServiceImpl implements TableAssociationService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> saveAsDataset(AssociationConfigDto config, String datasetName, String datasetParentId, String tableName) {
+    public Map<String, Object> saveAsDataset(AssociationConfigDto config, String datasetName, String datasetParentId, String tableName, String customSql) {
         if (config == null) {
             return Map.of("code", 400, "msg", "config不能为空", "data", null);
         }
@@ -692,7 +701,8 @@ public class TableAssociationServiceImpl implements TableAssociationService {
         }
 
         // 生成保存用SQL：带上 schema 前缀，确保在主库连接或外部数据源连接下都能正确访问目标库中的表
-        String sql = generateSql(config, true);
+        boolean useCustomSave = customSql != null && !customSql.trim().isEmpty();
+        String sql = useCustomSave ? stripTrailingSemicolon(customSql.trim()) : generateSql(config, true);
         Map<String, Object> valid = validateSql(sql);
         if (!Boolean.TRUE.equals(valid.get("valid"))) {
             return Map.of("code", 400, "msg", "SQL校验失败：" + valid.get("message"), "data", null);
@@ -795,7 +805,9 @@ public class TableAssociationServiceImpl implements TableAssociationService {
 
         // 4) 在目标数据源中生成物化表（物理表）
         try {
-            materializeTableForAssociation(datasetId, sql, config.getDataSourceId(), physicalTableName, primaryKeyColumn, columnNames);
+            materializeTableForAssociation(datasetId, sql, config.getDataSourceId(), physicalTableName,
+                    useCustomSave ? null : primaryKeyColumn,
+                    useCustomSave ? null : columnNames);
         } catch (Exception e) {
             log.warn("多表关联数据集物化表创建失败，datasetId={}，错误：{}", datasetId, e.getMessage());
             return Map.of(

@@ -37,6 +37,27 @@
         </div>
     </div>
 
+    <div class="card mb-3">
+        <div class="card-header">新增门店账号</div>
+        <div class="card-body row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small">门店编号 <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="newStoreId" placeholder="如 MD001"/>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small">门店名称</label>
+                <input type="text" class="form-control" id="newStoreName" placeholder="可选"/>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small">专属密码（可选）</label>
+                <input type="password" class="form-control" id="newStorePwd" placeholder="不填则走门店默认密码"/>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-success w-100" type="button" id="btnAddStore">添加</button>
+            </div>
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span>门店账号（数据表 jm_mcp_store_login）</span>
@@ -172,6 +193,33 @@
             .catch(function (e) {
                 showAlert('danger', (e && e.message) ? e.message : '获取密码失败');
             });
+    });
+
+    document.getElementById('btnAddStore').addEventListener('click', function () {
+        var sid = (document.getElementById('newStoreId').value || '').trim();
+        var sname = (document.getElementById('newStoreName').value || '').trim();
+        var pwd = document.getElementById('newStorePwd').value || '';
+        if (!sid) {
+            showAlert('danger', '请填写门店编号');
+            return;
+        }
+        postJson(BASE + '/mcp/store-login-admin/api/store-account', {
+            storeId: sid,
+            storeName: sname,
+            newPassword: pwd
+        }).then(function (r) {
+            if (r.code === 200) {
+                showAlert('success', '门店 ' + sid + ' 已添加/更新');
+                document.getElementById('newStoreId').value = '';
+                document.getElementById('newStoreName').value = '';
+                document.getElementById('newStorePwd').value = '';
+                loadStores();
+            } else {
+                showAlert('danger', r.msg || '失败');
+            }
+        }).catch(function (e) {
+            showAlert('danger', (e && e.message) ? e.message : '请求失败');
+        });
     });
 
     document.getElementById('btnReload').addEventListener('click', loadStores);

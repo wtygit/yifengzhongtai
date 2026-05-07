@@ -11,5 +11,7 @@ public class SaveAssociationRequest {
     private String datasetParentId;
     /** 物化表名（保存到目标数据源中的实际表名） */
     private String tableName;
+    /** 若填写则保存该 SELECT 为数据集 SQL（须通过校验）；物化表列从查询元数据推断 */
+    private String customSql;
 }
 

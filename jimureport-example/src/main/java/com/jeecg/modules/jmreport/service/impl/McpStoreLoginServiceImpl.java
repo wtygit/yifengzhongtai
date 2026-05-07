@@ -318,6 +318,21 @@ public class McpStoreLoginServiceImpl implements McpStoreLoginService {
     }
 
     @Override
+    public int upsertStoreAccount(String storeId, String storeName) {
+        ensureLocalTable();
+        if (!StringUtils.hasText(storeId)) {
+            return 0;
+        }
+        String id = storeId.trim();
+        String name = storeName != null ? storeName.trim() : null;
+        return jdbcTemplate.update(
+                "INSERT INTO " + TABLE + " (store_id, store_name, synced_at) VALUES (?, ?, NOW()) "
+                        + "ON DUPLICATE KEY UPDATE store_name = COALESCE(VALUES(store_name), store_name), synced_at = VALUES(synced_at)",
+                id,
+                StringUtils.hasText(name) ? name : null);
+    }
+
+    @Override
     public String getStoreCustomPasswordPlain(String storeId) {
         ensureLocalTable();
         if (!StringUtils.hasText(storeId)) {

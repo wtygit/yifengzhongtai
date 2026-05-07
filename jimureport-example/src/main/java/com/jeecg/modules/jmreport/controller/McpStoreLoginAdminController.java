@@ -62,6 +62,31 @@ public class McpStoreLoginAdminController {
         return ApiResult.ok(Map.of("storeId", storeId.trim(), "password", plain));
     }
 
+    /**
+     * 新增或更新门店账号（门店编号 + 名称）；可选同时设置专属密码。
+     */
+    @PostMapping("/mcp/store-login-admin/api/store-account")
+    @ResponseBody
+    public Map<String, Object> addOrUpdateStoreAccount(@RequestBody Map<String, Object> body) {
+        if (!isMcpAdmin()) {
+            return ApiResult.error(403, "需要管理员登录");
+        }
+        String storeId = body != null && body.get("storeId") != null ? String.valueOf(body.get("storeId")).trim() : "";
+        String storeName = body != null && body.get("storeName") != null ? String.valueOf(body.get("storeName")).trim() : "";
+        String newPassword = body != null && body.get("newPassword") != null ? String.valueOf(body.get("newPassword")) : "";
+        if (!StringUtils.hasText(storeId)) {
+            return ApiResult.error(400, "storeId 不能为空");
+        }
+        int n = mcpStoreLoginService.upsertStoreAccount(storeId, storeName);
+        if (n <= 0) {
+            return ApiResult.error(500, "写入门店账号失败");
+        }
+        if (StringUtils.hasText(newPassword)) {
+            mcpStoreLoginService.setStoreLoginPassword(storeId, newPassword);
+        }
+        return ApiResult.okMsg("门店账号已保存", Map.of("storeId", storeId));
+    }
+
     @PostMapping("/mcp/store-login-admin/api/store-password")
     @ResponseBody
     public Map<String, Object> updateStorePassword(@RequestBody Map<String, Object> body) {

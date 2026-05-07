@@ -122,7 +122,9 @@
             position: relative;
         }
         .ta-sql-editor {
-            height: 150px;
+            min-height: 180px;
+            width: 100%;
+            box-sizing: border-box;
             border: var(--ta-border);
             border-radius: var(--ta-radius-sm);
             background: #1e293b;
@@ -133,6 +135,10 @@
             padding: 12px;
             overflow: auto;
             white-space: pre;
+            resize: vertical;
+        }
+        textarea.ta-sql-editor {
+            display: block;
         }
         .ta-field-list {
             max-height: 200px;
@@ -781,8 +787,9 @@
                     </div>
                 </div>
 
-                <div class="ta-section-title">SQL 预览</div>
-                <div class="ta-sql-editor">{{ state.sql || '-- 点击「生成 SQL」查看结果' }}</div>
+                <div class="ta-section-title">SQL（可手动编辑）</div>
+                <textarea class="ta-sql-editor" v-model="state.sql" spellcheck="false"
+                          placeholder="点击中间「生成 SQL」后在此修改，再点「刷新预览」验证"></textarea>
 
                 <div class="ta-section-title">保存</div>
                 <el-button type="primary" size="default" @click="doSave" :disabled="!state.sql" style="width: 100%;">保存为数据集</el-button>
@@ -1251,12 +1258,12 @@ createApp({
             state.loading = true;
             axios.post('/api/table-association/preview', {
                 config: buildConfig(),
-                limit: 50
+                limit: 50,
+                customSql: (state.sql || '').trim()
             }).then(res => {
                 if (res.data && res.data.code === 200 && res.data.data) {
                     state.preview.columns = res.data.data.columns || [];
                     state.preview.rows = res.data.data.rows || [];
-                    state.sql = res.data.data.sql || state.sql;
                 } else {
                     ElementPlus.ElMessage.error(res.data && res.data.msg || '预览失败');
                 }
@@ -1285,7 +1292,8 @@ createApp({
                 config: buildConfig(),
                 datasetName: state.name,
                 datasetParentId: '',
-                tableName: state.targetTableName
+                tableName: state.targetTableName,
+                customSql: (state.sql || '').trim()
             }).then(res => {
                 if (res.data && res.data.code === 200) {
                     const datasetId = res.data.data && res.data.data.datasetId;

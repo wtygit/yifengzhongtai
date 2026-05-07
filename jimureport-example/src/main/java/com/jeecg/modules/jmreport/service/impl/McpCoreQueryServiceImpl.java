@@ -59,6 +59,14 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
     private volatile long groupTokenOptionsCacheExpiresAtMs;
     private volatile List<Map<String, Object>> groupTokenOptionsCachedList;
 
+    /** 海典库 hospitallist：懒加载表名与「医院名称」列（0=未探测，1=成功，-1=失败） */
+    private final Object hospitallistMetaLock = new Object();
+    private volatile int hospitallistMetaState;
+    private volatile String hospitallistTableNameCache;
+    private volatile String hospitallistNameColumnCache;
+
+    private static final Pattern MCP_SAFE_SQL_IDENT = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+
     /**
      * 海典同步数据源 JdbcTemplate（MCP 订单/患者/药品查询 + MCP 下单双表落库）
      */
@@ -818,11 +826,15 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         String patientName = request.get("patientName") == null ? null : String.valueOf(request.get("patientName")).trim();
         String patientPhone = request.get("patientPhone") == null ? null : String.valueOf(request.get("patientPhone")).trim();
         String patientIdCard = request.get("patientIdCard") == null ? null : String.valueOf(request.get("patientIdCard")).trim();
-        String patientEducation = request.get("patientEducation") == null ? null : String.valueOf(request.get("patientEducation")).trim();
+        String patientEducationRaw = request.get("patientEducation") == null ? null : String.valueOf(request.get("patientEducation")).trim();
         String requestTriggerType = request.get("requestTriggerType") == null ? null : String.valueOf(request.get("requestTriggerType")).trim();
         String groupName = request.get("groupName") == null ? null : String.valueOf(request.get("groupName")).trim();
         String middleOrderRemark = request.get("orderRemark") == null ? null : String.valueOf(request.get("orderRemark")).trim();
         String groupNickName = request.get("userGroupNickname") == null ? null : String.valueOf(request.get("userGroupNickname")).trim();
+        String deliveryHospital = request.get("deliveryHospital") == null ? null : String.valueOf(request.get("deliveryHospital")).trim();
+        String y3ImageInfo = request.get("y3ImageInfo") == null ? null : String.valueOf(request.get("y3ImageInfo")).trim();
+        // 小程序/中台侧「患教」展示以群昵称为准，昵称缺失时再回落到原患教字段
+        String patientEducation = firstNonBlank(groupNickName, patientEducationRaw);
         Object itemsObj = request.get("items");
         List<?> items = (itemsObj instanceof List) ? (List<?>) itemsObj : List.of();
         // 允许无药品信息下单：items 为空时 goodsDetail 传 []
@@ -907,6 +919,14 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 middleOrderRemark = appended;
             }
         }
+        if (StringUtils.hasText(deliveryHospital)) {
+            String line = "送货医院：" + deliveryHospital.trim();
+            middleOrderRemark = StringUtils.hasText(middleOrderRemark) ? (middleOrderRemark.trim() + "\n" + line) : line;
+        }
+        if (StringUtils.hasText(y3ImageInfo)) {
+            String line = "聊天截图：" + y3ImageInfo.trim();
+            middleOrderRemark = StringUtils.hasText(middleOrderRemark) ? (middleOrderRemark.trim() + "\n" + line) : line;
+        }
 
         String goodsDetailJson;
         try {
@@ -943,7 +963,13 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         payload.put("goodsDetail", goodsDetailJson);
         payload.put("status", normalizeStatus(middlePlatformDefaultStatus));
         String storeIdForGate = extractStoreIdForGate(request, extractGroupNameForStoreGate(request));
-        payload.put("storeId", StringUtils.hasText(storeIdForGate) ? storeIdForGate : middlePlatformStoreId);
+        String storeIdResolved = StringUtils.hasText(storeIdForGate) ? storeIdForGate : middlePlatformStoreId;
+        payload.put("storeId", storeIdResolved);
+        // 小程序/中台 snake_case：名称→group_name（优先群名称，私聊单等无群名时回落送货医院）；患教名称；门店编号
+        String groupNameSnake = firstNonBlank(blankToNull(groupName), blankToNull(deliveryHospital));
+        payload.put("group_name", StringUtils.hasText(groupNameSnake) ? groupNameSnake : null);
+        payload.put("patient_education_name", StringUtils.hasText(patientEducation) ? patientEducation : null);
+        payload.put("store_code", StringUtils.hasText(storeIdResolved) ? storeIdResolved : null);
 
         String url = buildMiddlePlatformReceiveUrl(middlePlatformBaseUrl);
         try {
@@ -1111,6 +1137,89 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
     }
 
     /**
+     * 从 MCP/Y3 入参中抽取图片类信息（URL 或 JSON），供审核页只读展示及写入备注传给中台。
+     */
+    private String extractY3ImageInfoFromRaw(Map<String, Object> raw) {
+        if (raw == null) {
+            return "";
+        }
+        String direct = firstNonBlank(
+                blankToNull(str(raw.get("y3ImageInfo"))),
+                blankToNull(getIgnoreCase(raw, "y3_image_info")),
+                blankToNull(str(raw.get("y3PicUrl"))),
+                blankToNull(getIgnoreCase(raw, "y3_pic_url")),
+                blankToNull(str(raw.get("y3ImageUrl"))),
+                blankToNull(getIgnoreCase(raw, "y3_image_url")));
+        if (StringUtils.hasText(direct)) {
+            return direct.trim();
+        }
+        Object imgs = firstNonNullObj(raw.get("y3Images"), raw.get("y3_images"), raw.get("Y3Images"));
+        String fromList = stringifyY3ImagesObject(imgs);
+        if (StringUtils.hasText(fromList)) {
+            return fromList;
+        }
+        Object chatInfoObj = raw.get("chatInfo");
+        if (chatInfoObj instanceof Map<?, ?> cm) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> chat = (Map<String, Object>) cm;
+            String nested = firstNonBlank(
+                    blankToNull(str(chat.get("y3ImageInfo"))),
+                    blankToNull(str(chat.get("y3PicUrl"))),
+                    blankToNull(str(chat.get("y3ImageUrl"))));
+            if (StringUtils.hasText(nested)) {
+                return nested.trim();
+            }
+            String nestedList = stringifyY3ImagesObject(firstNonNullObj(chat.get("y3Images"), chat.get("y3_images"), null));
+            if (StringUtils.hasText(nestedList)) {
+                return nestedList;
+            }
+        }
+        return "";
+    }
+
+    private static Object firstNonNullObj(Object a, Object b, Object c) {
+        if (a != null) {
+            return a;
+        }
+        if (b != null) {
+            return b;
+        }
+        return c;
+    }
+
+    private String stringifyY3ImagesObject(Object imgs) {
+        if (imgs == null) {
+            return "";
+        }
+        if (imgs instanceof String s) {
+            return s.trim();
+        }
+        try {
+            return objectMapper.writeValueAsString(imgs);
+        } catch (Exception e) {
+            return String.valueOf(imgs);
+        }
+    }
+
+    /**
+     * 按门店编号筛选（匹配 JSON 内 storeId 或群后缀解析出的门店串）。
+     */
+    private boolean matchesStoreIdFilter(Map<String, Object> requestData, String storeIdKeyword) {
+        if (!StringUtils.hasText(storeIdKeyword)) {
+            return true;
+        }
+        if (requestData == null) {
+            return false;
+        }
+        String q = storeIdKeyword.trim();
+        String reqGroupNameRaw = requestData.get("groupName") == null ? "" : String.valueOf(requestData.get("groupName"));
+        String sid = extractStoreIdForGate(requestData, extractGroupNameForStoreGate(requestData));
+        String suffixCsv = storeIdsCsvFromGroupNameSuffix(reqGroupNameRaw);
+        String blob = firstNonBlank(sid, suffixCsv, "");
+        return matchesTextFilter(blob, q);
+    }
+
+    /**
      * 将 user_request_data 多种入参形态统一为：patientName、patientPhone、patientIdCard、patientEducation、items，
      * 并从 requestJson（自然语言）中补全空缺字段。保留 requestJson 原文便于追溯。
      */
@@ -1125,6 +1234,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             out.put("groupName", "");
             out.put("orderRemark", "");
             out.put("userGroupNickname", "");
+            out.put("deliveryHospital", "");
+            out.put("y3ImageInfo", "");
             out.put("items", new ArrayList<>());
             return out;
         }
@@ -1213,6 +1324,14 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 blankToNull(str(raw.get("wxNickName"))),
                 blankToNull(getIgnoreCase(raw, "group_nickname")));
 
+        String deliveryHospital = firstNonBlank(
+                blankToNull(str(raw.get("deliveryHospital"))),
+                blankToNull(getIgnoreCase(raw, "delivery_hospital")),
+                blankToNull(str(raw.get("hospitalName"))),
+                blankToNull(getIgnoreCase(raw, "hospital_name")));
+
+        String y3ImageInfo = extractY3ImageInfoFromRaw(raw);
+
         String requestJsonRaw = firstNonBlank(
                 blankToNull(str(raw.get("requestJson"))),
                 blankToNull(getIgnoreCase(raw, "request_json")));
@@ -1240,6 +1359,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         out.put("groupName", groupName != null ? groupName : "");
         out.put("orderRemark", orderRemark != null ? orderRemark : "");
         out.put("userGroupNickname", userGroupNickname != null ? userGroupNickname : "");
+        out.put("deliveryHospital", deliveryHospital != null ? deliveryHospital : "");
+        out.put("y3ImageInfo", y3ImageInfo != null ? y3ImageInfo : "");
 
         List<Map<String, Object>> items = normalizeItemsList(raw.get("items"));
         if (items.isEmpty() && parsed != null && parsed.items != null) {
@@ -2198,6 +2319,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
     @Override
     public Map<String, Object> getOrderAuditList(String status, String groupToken,
                                                  String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
+                                                 String storeId,
                                                  String createDateStart, String createDateEnd,
                                                  String createTimeStart, String createTimeEnd,
                                                  String requestTriggerType) {
@@ -2259,7 +2381,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
 
             // 全量统计：返回“筛选后总单数”，不受页面列表 LIMIT 影响
             int totalCountFull = computeOrderAuditTotalCountFull(status, tokenQ, pendingId, patientName, patientPhone, patientIdCard, groupName,
-                    createFrom, createTo, requestTriggerType);
+                    storeId, createFrom, createTo, requestTriggerType);
 
             // 列表查询：若存在姓名/手机号/身份证/群名称/分词等筛选，放大 SQL 取数窗口，
             // 避免“先 LIMIT 再内存过滤”导致“筛选结果有值但列表空白”。
@@ -2267,7 +2389,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     || StringUtils.hasText(patientName)
                     || StringUtils.hasText(patientPhone)
                     || StringUtils.hasText(patientIdCard)
-                    || StringUtils.hasText(groupName);
+                    || StringUtils.hasText(groupName)
+                    || StringUtils.hasText(storeId);
             sql += " ORDER BY create_time DESC LIMIT ?";
             params.add(hasDeepFilter ? 5000 : 100);
 
@@ -2306,6 +2429,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     if (!isMcpAuditStoreVisibleForRequest(requestData, reqGroupName)) {
                         continue;
                     }
+                    if (!matchesStoreIdFilter(requestData, storeId)) {
+                        continue;
+                    }
 
                     // 提取患者信息
                     String patientNameValue = requestData.get("patientName") == null ? null : String.valueOf(requestData.get("patientName"));
@@ -2317,6 +2443,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     String reqStoreId = extractStoreIdForGate(requestData, reqGroupNameRaw);
                     String reqOrderRemark = requestData.get("orderRemark") == null ? "" : String.valueOf(requestData.get("orderRemark"));
                     String reqGroupNickname = requestData.get("userGroupNickname") == null ? "" : String.valueOf(requestData.get("userGroupNickname"));
+                    String reqDeliveryHospital = requestData.get("deliveryHospital") == null ? "" : String.valueOf(requestData.get("deliveryHospital"));
+                    String reqY3ImageInfo = requestData.get("y3ImageInfo") == null ? "" : String.valueOf(requestData.get("y3ImageInfo"));
                     String reqStoreIds = StringUtils.hasText(reqStoreId) ? reqStoreId : storeIdsCsvFromGroupNameSuffix(reqGroupNameRaw);
                     String reqTriggerType = requestData.get("requestTriggerType") == null ? "" : String.valueOf(requestData.get("requestTriggerType"));
 
@@ -2344,6 +2472,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                             orderItem.put("request_trigger_type", reqTriggerType);
                             orderItem.put("order_remark", reqOrderRemark);
                             orderItem.put("user_group_nickname", reqGroupNickname);
+                            orderItem.put("delivery_hospital", reqDeliveryHospital);
+                            orderItem.put("y3_image_info", reqY3ImageInfo);
                             orderItem.put("group_tokens", requestData.get("groupTokens"));
                             orderItem.put("drug_name", item.get("drugName"));
                             orderItem.put("spec", item.get("spec"));
@@ -2371,6 +2501,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         orderItem.put("request_trigger_type", reqTriggerType);
                         orderItem.put("order_remark", reqOrderRemark);
                         orderItem.put("user_group_nickname", reqGroupNickname);
+                        orderItem.put("delivery_hospital", reqDeliveryHospital);
+                        orderItem.put("y3_image_info", reqY3ImageInfo);
                         orderItem.put("group_tokens", requestData.get("groupTokens"));
                         orderList.add(orderItem);
                     }
@@ -2423,6 +2555,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
      */
     private int computeOrderAuditTotalCountFull(String status, String tokenQ,
                                                 String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
+                                                String storeId,
                                                 LocalDateTime createFrom, LocalDateTime createTo,
                                                 String requestTriggerType) {
         if (haidianJdbcTemplate == null) {
@@ -2435,7 +2568,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         || StringUtils.hasText(patientName)
                         || StringUtils.hasText(patientPhone)
                         || StringUtils.hasText(patientIdCard)
-                        || StringUtils.hasText(groupName);
+                        || StringUtils.hasText(groupName)
+                        || StringUtils.hasText(storeId);
         boolean hasJsonFilters = hasJsonFiltersExceptTrigger || StringUtils.hasText(triggerNorm);
 
         // 快路径：仅按 requestTriggerType 过滤时，用 LIKE 直接统计，避免全量 JSON 扫描
@@ -2605,6 +2739,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     if (!isMcpAuditStoreVisibleForRequest(requestData, reqGroupName)) {
                         continue;
                     }
+                    if (!matchesStoreIdFilter(requestData, storeId)) {
+                        continue;
+                    }
                     uniq.add(pid);
                 } catch (Exception ignored) {
                     // JSON 异常：统计口径以“无法解析则不计入筛选命中”为准，避免把未知数据算进来
@@ -2629,7 +2766,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             r.put("data", List.of());
             return r;
         }
-        return getOrderAuditList("0", groupToken, null, null, null, null, null, null, null, null, null, null);
+        return getOrderAuditList("0", groupToken, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private static boolean matchesTextFilter(String source, String keyword) {
@@ -3209,8 +3346,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             // 防止前端篡改群归属，群相关字段以原订单为准
             if (existingNorm != null) {
                 normalized.put("groupName", str(existingNorm.get("groupName")));
-                normalized.put("orderRemark", str(existingNorm.get("orderRemark")));
-                normalized.put("userGroupNickname", str(existingNorm.get("userGroupNickname")));
+                // 允许审核页修改备注、群昵称、送货医院、Y3 图等；群名仍以原订单为准
                 // requestTriggerType 不再强制沿用旧值：
                 // 身份证 Tab 下单前会显式传 idcard，这里必须允许覆盖旧历史值（如 phone），
                 // 否则 approveOrder 无法进入“身份证本地完成”分支。
@@ -5053,6 +5189,189 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             return StringUtils.hasText(storeId) && sessionStore.equals(storeId);
         }
         return isMcpAuditStoreAllowedForGroupName(groupNameFallback);
+    }
+
+    private static String escapeMysqlLike(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private String pickHospitalNameColumn(List<String> varcharCols) {
+        if (varcharCols == null || varcharCols.isEmpty()) {
+            return null;
+        }
+        String[] priority = new String[]{
+                "hospital_name", "hospitalname", "hosp_name", "hospname", "hospital",
+                "yyname", "yiyuanmingcheng", "mingcheng", "mc", "title", "name"
+        };
+        for (String p : priority) {
+            for (String c : varcharCols) {
+                if (c.equalsIgnoreCase(p)) {
+                    return c;
+                }
+            }
+        }
+        for (String c : varcharCols) {
+            if (c.toLowerCase(Locale.ROOT).contains("hospital")) {
+                return c;
+            }
+        }
+        for (String c : varcharCols) {
+            if (c.contains("医院")) {
+                return c;
+            }
+        }
+        for (String c : varcharCols) {
+            String lo = c.toLowerCase(Locale.ROOT);
+            if (!lo.equals("id") && !lo.endsWith("_id") && !lo.equals("code") && !lo.endsWith("code")) {
+                return c;
+            }
+        }
+        return varcharCols.get(0);
+    }
+
+    /**
+     * 探测海典库 hospitallist 表及医院名称列（失败则缓存 -1，避免每次打库）。
+     */
+    private boolean ensureHospitallistMeta() {
+        if (hospitallistMetaState == 1) {
+            return true;
+        }
+        if (hospitallistMetaState == -1) {
+            return false;
+        }
+        synchronized (hospitallistMetaLock) {
+            if (hospitallistMetaState != 0) {
+                return hospitallistMetaState == 1;
+            }
+            if (haidianJdbcTemplate == null) {
+                hospitallistMetaState = -1;
+                return false;
+            }
+            try {
+                List<Map<String, Object>> tr = haidianJdbcTemplate.queryForList("SHOW TABLES LIKE 'hospitallist'");
+                if (tr.isEmpty()) {
+                    tr = haidianJdbcTemplate.queryForList("SHOW TABLES LIKE 'Hospitallist'");
+                }
+                if (tr.isEmpty()) {
+                    log.warn("海典库未找到 hospitallist 表");
+                    hospitallistMetaState = -1;
+                    return false;
+                }
+                String tableName = null;
+                for (Object v : tr.get(0).values()) {
+                    if (v != null) {
+                        tableName = String.valueOf(v).trim();
+                        break;
+                    }
+                }
+                if (!StringUtils.hasText(tableName) || !MCP_SAFE_SQL_IDENT.matcher(tableName).matches()) {
+                    hospitallistMetaState = -1;
+                    return false;
+                }
+                List<Map<String, Object>> colRows = haidianJdbcTemplate.queryForList("SHOW COLUMNS FROM `" + tableName + "`");
+                List<String> varcharCols = new ArrayList<>();
+                for (Map<String, Object> row : colRows) {
+                    String field = row.get("Field") == null ? null : String.valueOf(row.get("Field")).trim();
+                    String type = row.get("Type") == null ? "" : String.valueOf(row.get("Type")).toLowerCase(Locale.ROOT);
+                    if (!StringUtils.hasText(field) || !MCP_SAFE_SQL_IDENT.matcher(field).matches()) {
+                        continue;
+                    }
+                    if (type.contains("varchar") || type.contains("char") || type.contains("text")) {
+                        varcharCols.add(field);
+                    }
+                }
+                String nameCol = pickHospitalNameColumn(varcharCols);
+                if (!StringUtils.hasText(nameCol)) {
+                    log.warn("hospitallist 表未识别到医院名称列");
+                    hospitallistMetaState = -1;
+                    return false;
+                }
+                hospitallistTableNameCache = tableName;
+                hospitallistNameColumnCache = nameCol;
+                hospitallistMetaState = 1;
+                return true;
+            } catch (Exception e) {
+                log.warn("探测 hospitallist 失败: {}", e.getMessage());
+                hospitallistMetaState = -1;
+                return false;
+            }
+        }
+    }
+
+    @Override
+    public Map<String, Object> searchHospitalList(String keyword) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (haidianJdbcTemplate == null) {
+            result.put("code", 500);
+            result.put("msg", "海典同步库未初始化");
+            result.put("data", List.of());
+            return result;
+        }
+        if (!ensureHospitallistMeta()) {
+            result.put("code", 0);
+            result.put("msg", "hospitallist 不可用或未配置");
+            result.put("data", List.of());
+            return result;
+        }
+        String tbl = hospitallistTableNameCache;
+        String col = hospitallistNameColumnCache;
+        if (!StringUtils.hasText(tbl) || !StringUtils.hasText(col)) {
+            result.put("code", 0);
+            result.put("msg", "hospitallist 元数据异常");
+            result.put("data", List.of());
+            return result;
+        }
+        try {
+            String kw = keyword == null ? "" : keyword.trim();
+            String sql;
+            List<Object> args = new ArrayList<>();
+            if (!StringUtils.hasText(kw)) {
+                sql = "SELECT `" + col + "` AS n FROM `" + tbl + "` WHERE `" + col + "` IS NOT NULL AND TRIM(`" + col + "`) <> '' ORDER BY `" + col + "` ASC LIMIT 100";
+            } else {
+                String lik = "%" + escapeMysqlLike(kw) + "%";
+                sql = "SELECT DISTINCT `" + col + "` AS n FROM `" + tbl + "` WHERE `" + col + "` LIKE ? ESCAPE '\\\\' AND TRIM(`" + col + "`) <> '' ORDER BY `" + col + "` ASC LIMIT 100";
+                args.add(lik);
+            }
+            List<Map<String, Object>> rows = args.isEmpty()
+                    ? haidianJdbcTemplate.queryForList(sql)
+                    : haidianJdbcTemplate.queryForList(sql, args.toArray());
+            LinkedHashSet<String> seen = new LinkedHashSet<>();
+            List<String> out = new ArrayList<>();
+            for (Map<String, Object> row : rows) {
+                Object n = row.get("n");
+                if (n == null) {
+                    continue;
+                }
+                String s = String.valueOf(n).trim();
+                if (!StringUtils.hasText(s) || seen.contains(s)) {
+                    continue;
+                }
+                seen.add(s);
+                out.add(s);
+                if (out.size() >= 100) {
+                    break;
+                }
+            }
+            result.put("code", 0);
+            result.put("msg", "ok");
+            result.put("data", out);
+            return result;
+        } catch (org.springframework.jdbc.CannotGetJdbcConnectionException e) {
+            log.warn("searchHospitalList 海典库连接失败");
+            result.put("code", 0);
+            result.put("msg", "海典库连接失败");
+            result.put("data", List.of());
+            return result;
+        } catch (Exception e) {
+            log.error("searchHospitalList 失败", e);
+            result.put("code", 500);
+            result.put("msg", "查询失败：" + e.getMessage());
+            result.put("data", List.of());
+            return result;
+        }
     }
 
     @Override

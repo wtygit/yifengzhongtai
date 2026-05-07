@@ -10,9 +10,9 @@ public interface TableAssociationService {
 
     Map<String, Object> validateSql(String sql);
 
-    Map<String, Object> preview(AssociationConfigDto config, Integer limit);
+    Map<String, Object> preview(AssociationConfigDto config, Integer limit, String customSql);
 
-    Map<String, Object> saveAsDataset(AssociationConfigDto config, String datasetName, String datasetParentId, String tableName);
+    Map<String, Object> saveAsDataset(AssociationConfigDto config, String datasetName, String datasetParentId, String tableName, String customSql);
 
     /**
      * 根据多表关联数据集ID执行查询，始终返回实时数据

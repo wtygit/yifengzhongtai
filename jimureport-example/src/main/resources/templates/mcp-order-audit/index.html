@@ -243,6 +243,7 @@
                 <input id="filterPatientPhone" class="form-control form-control-sm" style="width: 150px;" placeholder="手机号">
                 <input id="filterPatientIdCard" class="form-control form-control-sm d-none" style="width: 200px;" placeholder="身份证号">
                 <input id="filterGroupName" class="form-control form-control-sm trigger-phone-only" style="width: 180px;" placeholder="群名称">
+                <input id="filterStoreId" class="form-control form-control-sm" style="width: 120px;" placeholder="门店号" title="按订单内门店号/群后缀门店筛选">
                 <label class="mb-0 small text-muted" for="filterCreateDateStart">创建日期</label>
                 <input id="filterCreateDateStart" type="date" class="form-control form-control-sm" style="width: 155px;" title="创建日期起（含当天 0 点起）">
                 <span class="small text-muted">至</span>
@@ -282,9 +283,10 @@
                         <th class="trigger-idcard-only" style="width: 180px;">身份证</th>
                         <th class="trigger-phone-only" style="width: 120px;">群名称</th>
                         <th style="width: 100px;">门店</th>
-                        <th style="width: 180px;">患教</th>
+                        <th style="width: 120px;">送货医院</th>
                         <th style="width: 100px;">下单备注</th>
-                        <th style="width: 100px;">昵称</th>
+                        <th style="width: 100px;">群昵称</th>
+                        <th style="width: 140px;">聊天截图</th>
                         <th style="width: 180px;">创建时间</th>
                         <th style="width: 80px;">药品信息</th>
                         <th style="width: 150px;">操作</th>
@@ -367,18 +369,28 @@
                             <input type="text" class="form-control" id="editPatientName" name="patientName" required>
                         </div>
                         <div class="mb-3">
-                            <label for="editPatientPhone" class="form-label">手机号 <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="editPatientPhone" name="patientPhone" required>
+                            <label for="editPatientPhone" class="form-label">手机号</label>
+                            <input type="text" class="form-control" id="editPatientPhone" name="patientPhone" placeholder="手机号板块建议填写">
                         </div>
                         <div class="mb-3">
                             <label for="editPatientIdCard" class="form-label">身份证</label>
                             <input type="text" class="form-control" id="editPatientIdCard" name="patientIdCard">
                         </div>
                         <div class="mb-3">
-                            <label for="editPatientEducation" class="form-label">患教</label>
-                            <select class="form-select" id="editPatientEducation" name="patientEducation">
-                                <option value="">请选择患教</option>
-                            </select>
+                            <label for="editUserGroupNickname" class="form-label">群昵称</label>
+                            <input type="text" class="form-control" id="editUserGroupNickname" placeholder="以昵称为准同步到小程序/中台患教展示">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDeliveryHospital" class="form-label">送货医院</label>
+                            <input type="text" class="form-control" id="editDeliveryHospital" list="editHospitalDatalist" autocomplete="off" placeholder="输入关键字，海典 hospitallist 模糊匹配医院名称">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editOrderRemark" class="form-label">下单备注</label>
+                            <textarea class="form-control" id="editOrderRemark" rows="2" placeholder="选填"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editY3ImageInfo" class="form-label">聊天截图</label>
+                            <textarea class="form-control bg-light" id="editY3ImageInfo" rows="2" readonly placeholder="由系统传入，只读"></textarea>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">药品信息</label>
@@ -393,7 +405,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" onclick="saveEdit()">保存</button>
+                    <button type="button" class="btn btn-primary" onclick="saveEdit()">保存并下单</button>
                 </div>
             </div>
         </div>
@@ -430,14 +442,16 @@
                                 <input id="manualGroupName" type="text" class="form-control" placeholder="可选（群单）">
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">患教</label>
-                                <select id="manualPatientEducation" class="form-select">
-                                    <option value="">请选择患教</option>
-                                </select>
+                                <label class="form-label">群昵称</label>
+                                <input id="manualUserGroupNickname" type="text" class="form-control" placeholder="可选，同步患教展示">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">下单备注</label>
                                 <input id="manualOrderRemark" type="text" class="form-control" placeholder="可选">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">送货医院</label>
+                                <input id="manualDeliveryHospital" type="text" class="form-control" list="manualHospitalDatalist" autocomplete="off" placeholder="可选，支持关键字查询医院">
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">门店号</label>
@@ -461,6 +475,9 @@
             </div>
         </div>
     </div>
+
+    <datalist id="editHospitalDatalist"></datalist>
+    <datalist id="manualHospitalDatalist"></datalist>
 
     <!-- 手动新增发货登记（补漏单） -->
     <div class="modal fade" id="manualAddShipmentModal" tabindex="-1" aria-labelledby="manualAddShipmentModalLabel" aria-hidden="true">
@@ -625,9 +642,44 @@
         const MCP_AUDIT_STORE_ID = (document.body.getAttribute('data-mcp-audit-store-id') || '').trim();
         const MCP_AUDIT_ADMIN_BYPASS = String(document.body.getAttribute('data-mcp-audit-admin-bypass') || '').toLowerCase() === 'true';
         let orderDataMap = new Map(); // 存储订单原始数据，用于保存修改
-        let patientEducationOptions = [];
         let currentOrderTriggerType = 'phone'; // phone | idcard
         let selectedOrderPendingIds = new Set();
+        let hospitalSuggestTimerEdit = null;
+        let hospitalSuggestTimerManual = null;
+
+        function fillHospitalDatalist(datalistId, keyword) {
+            const dl = document.getElementById(datalistId);
+            if (!dl) return;
+            const q = (keyword || '').trim();
+            fetch(`${BASE_URL}/mcp/hospital-list?keyword=` + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(j => {
+                    if (j.code !== 0 || !Array.isArray(j.data)) return;
+                    dl.innerHTML = '';
+                    j.data.forEach(function (name) {
+                        const opt = document.createElement('option');
+                        opt.value = name;
+                        dl.appendChild(opt);
+                    });
+                })
+                .catch(function () { /* ignore */ });
+        }
+
+        function scheduleHospitalSuggest(which) {
+            if (which === 'edit') {
+                if (hospitalSuggestTimerEdit) clearTimeout(hospitalSuggestTimerEdit);
+                hospitalSuggestTimerEdit = setTimeout(function () {
+                    const v = (document.getElementById('editDeliveryHospital') || {}).value || '';
+                    fillHospitalDatalist('editHospitalDatalist', v);
+                }, 280);
+            } else {
+                if (hospitalSuggestTimerManual) clearTimeout(hospitalSuggestTimerManual);
+                hospitalSuggestTimerManual = setTimeout(function () {
+                    const v = (document.getElementById('manualDeliveryHospital') || {}).value || '';
+                    fillHospitalDatalist('manualHospitalDatalist', v);
+                }, 280);
+            }
+        }
 
         /** 群名称如 xxx-10389,10391：取后缀门店编号集合，当前登录门店在集合中即可编辑/下单 */
         function storeIdsFromGroupNameText(text) {
@@ -730,8 +782,8 @@
             }
             const isIdcard = currentOrderTriggerType === 'idcard';
             const headers = isIdcard
-                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '患教', '下单备注', '昵称', '创建时间']
-                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '患教', '下单备注', '群昵称', '创建时间'];
+                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间']
+                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间'];
             const rows = [];
             selectedOrderPendingIds.forEach(pid => {
                 const od = orderDataMap.get(pid);
@@ -739,58 +791,11 @@
                 const o = od.order;
                 const statusText = formatOrderAuditStatusText(o.audit_status);
                 rows.push(isIdcard
-                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.patient_education || '', o.order_remark || '', o.user_group_nickname || '', formatDateTime(o.create_time || '')]
-                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.patient_education || '', o.order_remark || '', o.user_group_nickname || '', formatDateTime(o.create_time || '')]);
+                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]
+                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]);
             });
             const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
             downloadExcel((isIdcard ? '订单审核_身份证_' : '订单审核_手机号_') + stamp + '.xls', headers, rows);
-        }
-        function buildPatientEducationSelectHtml(pendingId, currentValue, disabled) {
-            const opts = ['<option value="">请选择患教</option>'];
-            const current = (currentValue || '').trim();
-            if (current && !patientEducationOptions.some(x => String(x.id || '').trim() === current)) {
-                opts.push('<option value="' + escapeHtml(current) + '" selected>' + escapeHtml(current + '（历史值）') + '</option>');
-            }
-            patientEducationOptions.forEach(function (x) {
-                const id = String(x.id || '').trim();
-                if (!id) return;
-                const label = String(x.label || x.name || id);
-                const selected = id === current ? ' selected' : '';
-                opts.push('<option value="' + escapeHtml(id) + '"' + selected + '>' + escapeHtml(label) + '</option>');
-            });
-            const dis = disabled ? ' disabled' : '';
-            return '<select class="form-select form-select-sm patient-education-select" data-pending-id="' + escapeHtml(pendingId) + '"' + dis + '>'
-                + opts.join('')
-                + '</select>';
-        }
-        function onPatientEducationChange(pendingId, value) {
-            const od = orderDataMap.get(pendingId);
-            if (!od || !od.order) return;
-            od.order.patient_education = value || '';
-            const modalEl = document.getElementById('editPendingId');
-            if (modalEl && modalEl.value === pendingId) {
-                const editSel = document.getElementById('editPatientEducation');
-                if (editSel) {
-                    editSel.value = value || '';
-                }
-            }
-        }
-        function fillPatientEducationSelect(selectEl, selectedValue) {
-            if (!selectEl) return;
-            const current = (selectedValue || '').trim();
-            let html = '<option value="">请选择患教</option>';
-            if (current && !patientEducationOptions.some(x => String(x.id || '').trim() === current)) {
-                html += '<option value="' + escapeHtml(current) + '">' + escapeHtml(current + '（历史值）') + '</option>';
-            }
-            patientEducationOptions.forEach(function (x) {
-                const id = String(x.id || '').trim();
-                if (!id) return;
-                const label = String(x.label || x.name || id);
-                const selected = id === current ? ' selected' : '';
-                html += '<option value="' + escapeHtml(id) + '"' + selected + '>' + escapeHtml(label) + '</option>';
-            });
-            selectEl.innerHTML = html;
-            selectEl.value = current || '';
         }
         const MCP_AUDIT_GROUP_TOKEN_KEY = 'mcp_order_audit_group_token';
         /** 旧版统一 key，仅用于迁移到按 Tab 拆分后的存储 */
@@ -837,6 +842,7 @@
                 set('filterPatientPhone', saved.patientPhone);
                 set('filterPatientIdCard', saved.patientIdCard);
                 set('filterGroupName', saved.groupName);
+                set('filterStoreId', saved.storeId);
                 set('filterCreateDateStart', saved.createDateStart);
                 set('filterCreateDateEnd', saved.createDateEnd);
                 if (currentOrderTriggerType === 'idcard') {
@@ -911,6 +917,7 @@
                 patientPhone: val('filterPatientPhone'),
                 patientIdCard: val('filterPatientIdCard'),
                 groupName: val('filterGroupName'),
+                storeId: val('filterStoreId'),
                 createDateStart: val('filterCreateDateStart'),
                 createDateEnd: val('filterCreateDateEnd'),
                 requestTriggerType: currentOrderTriggerType
@@ -930,6 +937,7 @@
             set('filterPatientPhone', filters.patientPhone);
             set('filterPatientIdCard', filters.patientIdCard);
             set('filterGroupName', filters.groupName);
+            set('filterStoreId', filters.storeId);
             set('filterCreateDateStart', filters.createDateStart);
             set('filterCreateDateEnd', filters.createDateEnd);
             if (filters.requestTriggerType === 'idcard' || filters.requestTriggerType === 'phone') {
@@ -946,7 +954,7 @@
 
         function resetFilters() {
             setAuditFilters({
-                status: '', groupToken: '', pendingId: '', patientName: '', patientPhone: '', patientIdCard: '', groupName: '',
+                status: '', groupToken: '', pendingId: '', patientName: '', patientPhone: '', patientIdCard: '', groupName: '', storeId: '',
                 createDateStart: '', createDateEnd: '', requestTriggerType: currentOrderTriggerType
             });
             localStorage.removeItem(mcpAuditFiltersStorageKey(currentOrderTriggerType));
@@ -1100,17 +1108,18 @@
             const groupWrap = document.getElementById('manualGroupNameWrap');
             if (groupWrap) groupWrap.style.display = isIdcard ? 'none' : '';
 
-            ['manualPatientName', 'manualPatientPhone', 'manualPatientIdCard', 'manualGroupName', 'manualOrderRemark', 'manualOrderStoreId']
+            ['manualPatientName', 'manualPatientPhone', 'manualPatientIdCard', 'manualGroupName', 'manualOrderRemark', 'manualOrderStoreId',
+                'manualUserGroupNickname', 'manualDeliveryHospital']
                 .forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.value = '';
                 });
-            fillPatientEducationSelect(document.getElementById('manualPatientEducation'), '');
             const list = document.getElementById('manualDrugList');
             if (list) list.innerHTML = '<div class="text-muted small">不填药品也可以先创建，后续在列表“编辑”里补充。</div>';
 
             const modal = new bootstrap.Modal(document.getElementById('manualAddOrderModal'));
             modal.show();
+            fillHospitalDatalist('manualHospitalDatalist', '');
         }
 
         function manualAddDrugRow() {
@@ -1157,7 +1166,8 @@
             const patientPhone = (document.getElementById('manualPatientPhone') || {}).value || '';
             const patientIdCard = (document.getElementById('manualPatientIdCard') || {}).value || '';
             const groupName = (document.getElementById('manualGroupName') || {}).value || '';
-            const patientEducation = (document.getElementById('manualPatientEducation') || {}).value || '';
+            const userGroupNickname = (document.getElementById('manualUserGroupNickname') || {}).value || '';
+            const deliveryHospital = (document.getElementById('manualDeliveryHospital') || {}).value || '';
             const orderRemark = (document.getElementById('manualOrderRemark') || {}).value || '';
             const manualOrderStoreId = ((document.getElementById('manualOrderStoreId') || {}).value || '').trim();
             const effectiveStoreId = manualOrderStoreId || (typeof MCP_AUDIT_STORE_ID !== 'undefined' && MCP_AUDIT_STORE_ID ? String(MCP_AUDIT_STORE_ID).trim() : '');
@@ -1185,22 +1195,26 @@
                 patientName: patientName.trim(),
                 patientPhone: patientPhone.trim(),
                 patientIdCard: patientIdCard.trim(),
-                patientEducation: (patientEducation || '').trim(),
                 items: items
             };
+            if ((deliveryHospital || '').trim()) {
+                payload.deliveryHospital = (deliveryHospital || '').trim();
+            }
             // 后端 createOrder 强制仅支持 chatInfo 风格入参（禁用 groupName/orderRemark/userGroupNickname 等顶层字段）
-            // 群名与备注放到 chatInfo 内，避免 400：仅支持 chatInfo 结构传参
-            if (!isIdcard && (groupName.trim() || orderRemark.trim() || effectiveStoreId)) {
+            // 群名与备注、昵称放到 chatInfo 内，避免 400：仅支持 chatInfo 结构传参
+            if (!isIdcard && (groupName.trim() || orderRemark.trim() || effectiveStoreId || userGroupNickname.trim())) {
                 payload.chatInfo = {
                     roomName: groupName.trim(),
                     remark: (orderRemark || '').trim(),
-                    storeId: effectiveStoreId || ''
+                    storeId: effectiveStoreId || '',
+                    nickName: (userGroupNickname || '').trim()
                 };
-            } else if (isIdcard && (orderRemark.trim() || effectiveStoreId)) {
+            } else if (isIdcard && (orderRemark.trim() || effectiveStoreId || userGroupNickname.trim())) {
                 payload.chatInfo = {
                     roomName: '',
                     remark: (orderRemark || '').trim(),
-                    storeId: effectiveStoreId || ''
+                    storeId: effectiveStoreId || '',
+                    nickName: (userGroupNickname || '').trim()
                 };
             }
 
@@ -1403,7 +1417,7 @@
                         selectEl.value = remembered;
                     }
                     ['filterStatus', 'filterPendingId', 'filterPatientName', 'filterPatientPhone', 'filterPatientIdCard',
-                        'filterGroupName', 'filterGroupToken', 'filterCreateDateStart', 'filterCreateDateEnd'
+                        'filterGroupName', 'filterStoreId', 'filterGroupToken', 'filterCreateDateStart', 'filterCreateDateEnd'
                     ].forEach(id => {
                         const el = document.getElementById(id);
                         if (!el) return;
@@ -1417,26 +1431,6 @@
                     console.warn('加载群分词选项失败', err);
                     selectEl.innerHTML = '<option value="">全部</option>';
                     selectEl.onchange = () => loadOrders();
-                });
-        }
-
-        function loadPatientEducationOptions() {
-            return fetch(`${BASE_URL}/mcp/patient-education-options`, {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' }
-            })
-                .then(res => res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status)))
-                .then(data => {
-                    if (data && data.code === 0 && Array.isArray(data.data)) {
-                        patientEducationOptions = data.data;
-                        return;
-                    }
-                    patientEducationOptions = [];
-                    console.warn('加载患教选项失败：', data && data.msg ? data.msg : '未知错误');
-                })
-                .catch(err => {
-                    patientEducationOptions = [];
-                    console.warn('加载患教选项异常：', err);
                 });
         }
 
@@ -1472,7 +1466,9 @@
                             store_ids: order.store_ids || order.storeIds || '',
                             request_trigger_type: order.request_trigger_type || order.requestTriggerType || '',
                             order_remark: order.order_remark || order.orderRemark || '',
-                            user_group_nickname: order.user_group_nickname || order.userGroupNickname || ''
+                            user_group_nickname: order.user_group_nickname || order.userGroupNickname || '',
+                            delivery_hospital: order.delivery_hospital || order.deliveryHospital || '',
+                            y3_image_info: order.y3_image_info || order.y3ImageInfo || ''
                         },
                         drugs: []
                     });
@@ -1511,7 +1507,7 @@
                 const canStore = (currentOrderTriggerType === 'idcard') ? true : canEditOrderByGroupName(order.group_name || '');
                 const ro = canStore ? '' : ' readonly';
                 const storeDisplay = order.store_ids || (storeIdsFromGroupNameText(order.group_name || '').join(','));
-                const patientEducationCell = buildPatientEducationSelectHtml(pendingId, order.patient_education || '', !canStore);
+                const y3Short = (order.y3_image_info || '').length > 40 ? escapeHtml((order.y3_image_info || '').substring(0, 40)) + '…' : escapeHtml(order.y3_image_info || '');
                 const checked = selectedOrderPendingIds.has(pendingId) ? ' checked' : '';
                 html += `
                     <tr data-pending-id="${pendingId}">
@@ -1548,9 +1544,10 @@
                         </td>
                         <td class="small text-break trigger-phone-only">${escapeHtml(order.group_name || '-')}</td>
                         <td class="small text-break">${escapeHtml(storeDisplay || '-')}</td>
-                        <td class="small">${patientEducationCell}</td>
+                        <td class="small text-break">${escapeHtml(order.delivery_hospital || '-')}</td>
                         <td class="small text-break">${escapeHtml(order.order_remark || '-')}</td>
                         <td class="small text-break">${escapeHtml(order.user_group_nickname || '-')}</td>
+                        <td class="small text-break" title="${escapeHtml(order.y3_image_info || '')}">${order.y3_image_info ? y3Short : '-'}</td>
                         <td>${createTime}</td>
                         <td style="position: relative; overflow: visible;">
                             ${drugs.length > 0 ? 
@@ -1622,12 +1619,6 @@
             refreshSelectAllState();
             const orderCount = Number.isFinite(totalCount) ? totalCount : orderMap.size;
             updateFilterResultCount(orderCount);
-            container.querySelectorAll('.patient-education-select').forEach(function (el) {
-                el.addEventListener('change', function () {
-                    const pid = el.getAttribute('data-pending-id') || '';
-                    onPatientEducationChange(pid, el.value || '');
-                });
-            });
             applyOrderTriggerVisibility();
             
             // 确保所有药品详情初始状态都是隐藏的
@@ -1757,8 +1748,6 @@
             const patientName = row.querySelector('input[data-field="patient_name"]')?.value || '';
             const patientPhone = row.querySelector('input[data-field="patient_phone"]')?.value || '';
             const patientIdCard = row.querySelector('input[data-field="patient_id_card"]')?.value || '';
-            const patientEducation = row.querySelector('select.patient-education-select')?.value || orderData?.order?.patient_education || '';
-
             if (!orderData) {
                 console.error('订单数据不存在');
                 return;
@@ -1775,11 +1764,12 @@
                 patientName: patientName.trim() || orderData.order.patient_name,
                 patientPhone: patientPhone.trim() || orderData.order.patient_phone,
                 patientIdCard: patientIdCard.trim() || orderData.order.patient_id_card,
-                patientEducation: patientEducation,
                 requestTriggerType: orderData.order.request_trigger_type || currentOrderTriggerType,
                 groupName: (currentOrderTriggerType === 'idcard') ? '' : (orderData.order.group_name || ''),
                 orderRemark: orderData.order.order_remark || '',
                 userGroupNickname: orderData.order.user_group_nickname || '',
+                deliveryHospital: orderData.order.delivery_hospital || '',
+                y3ImageInfo: orderData.order.y3_image_info || '',
                 items: (orderData.drugs && orderData.drugs.length > 0) ? orderData.drugs.map(drug => ({
                     drugName: drug.name,
                     spec: drug.spec,
@@ -1857,11 +1847,10 @@
             document.getElementById('editPatientName').value = order.patient_name || '';
             document.getElementById('editPatientPhone').value = order.patient_phone || '';
             document.getElementById('editPatientIdCard').value = order.patient_id_card || '';
-            const rowSel = document.querySelector(`tr[data-pending-id="${pendingId}"] select.patient-education-select`);
-            if (rowSel && rowSel.value !== undefined) {
-                order.patient_education = rowSel.value || order.patient_education || '';
-            }
-            fillPatientEducationSelect(document.getElementById('editPatientEducation'), order.patient_education || '');
+            document.getElementById('editUserGroupNickname').value = order.user_group_nickname || '';
+            document.getElementById('editDeliveryHospital').value = order.delivery_hospital || '';
+            document.getElementById('editOrderRemark').value = order.order_remark || '';
+            document.getElementById('editY3ImageInfo').value = order.y3_image_info || '';
 
             // 渲染药品列表
             renderDrugList(drugs);
@@ -1869,6 +1858,7 @@
             // 显示模态框
             const modal = new bootstrap.Modal(document.getElementById('editModal'));
             modal.show();
+            fillHospitalDatalist('editHospitalDatalist', order.delivery_hospital || '');
         }
 
         // 渲染药品列表
@@ -1988,12 +1978,6 @@
 
         // 保存编辑
         function saveEdit() {
-            const form = document.getElementById('editForm');
-            if (!form.checkValidity()) {
-                form.reportValidity();
-                return;
-            }
-
             const pendingId = document.getElementById('editPendingId').value;
             const od = orderDataMap.get(pendingId);
             if (od && !canEditOrderByGroupName(od.order.group_name)) {
@@ -2003,7 +1987,14 @@
             const patientName = document.getElementById('editPatientName').value.trim();
             const patientPhone = document.getElementById('editPatientPhone').value.trim();
             const patientIdCard = document.getElementById('editPatientIdCard').value.trim();
-            const patientEducation = (document.getElementById('editPatientEducation').value || '').trim();
+            const userGroupNickname = (document.getElementById('editUserGroupNickname').value || '').trim();
+            const deliveryHospital = (document.getElementById('editDeliveryHospital').value || '').trim();
+            const orderRemark = (document.getElementById('editOrderRemark').value || '').trim();
+            const y3ImageInfo = (document.getElementById('editY3ImageInfo').value || '').trim();
+            if (currentOrderTriggerType !== 'idcard' && !patientPhone) {
+                alert('手机号板块请填写手机号后再保存并下单。');
+                return;
+            }
 
             // 收集药品信息
             const drugItems = document.querySelectorAll('#editDrugList .drug-edit-item');
@@ -2042,15 +2033,18 @@
                 patientName: patientName,
                 patientPhone: patientPhone,
                 patientIdCard: patientIdCard,
-                patientEducation: patientEducation,
                 requestTriggerType: od && od.order ? (od.order.request_trigger_type || currentOrderTriggerType) : currentOrderTriggerType,
                 groupName: (currentOrderTriggerType === 'idcard') ? '' : (od && od.order ? (od.order.group_name || '') : ''),
-                orderRemark: od && od.order ? (od.order.order_remark || '') : '',
-                userGroupNickname: od && od.order ? (od.order.user_group_nickname || '') : '',
+                orderRemark: orderRemark,
+                userGroupNickname: userGroupNickname,
+                deliveryHospital: deliveryHospital,
+                y3ImageInfo: y3ImageInfo,
                 items: drugs
             };
 
-            // 调用更新API
+            const auditStatus = od && od.order ? od.order.audit_status : 0;
+            const shouldApprove = auditStatus === 0;
+
             fetch(`${BASE_URL}/mcp/order-audit-update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2061,20 +2055,42 @@
             })
             .then(res => res.json())
             .then(data => {
-                if (data.code === 0) {
+                if (data.code !== 0) {
+                    throw new Error(data.msg || '保存失败');
+                }
+                if (!shouldApprove) {
                     playMcpOrderNotifySound('save');
                     alert('保存成功！');
-                    // 关闭模态框
                     const modal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
-                    modal.hide();
-                    // 刷新列表
+                    if (modal) modal.hide();
+                    loadOrders();
+                    return null;
+                }
+                return fetch(`${BASE_URL}/mcp/core_order_approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pendingId: pendingId, auditRemark: '编辑保存并下单' })
+                });
+            })
+            .then(res => {
+                if (res == null) return null;
+                return res.json();
+            })
+            .then(data => {
+                if (data == null) return;
+                if (data.code === 0) {
+                    playMcpOrderNotifySound('save');
+                    alert('已保存并提交下单。');
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
+                    if (modal) modal.hide();
                     loadOrders();
                 } else {
-                    alert('保存失败：' + data.msg);
+                    alert('已保存，但下单失败：' + (data.msg || '未知错误'));
+                    loadOrders();
                 }
             })
             .catch(err => {
-                alert('保存失败：' + err.message);
+                alert('操作失败：' + err.message);
             });
         }
 
@@ -2608,7 +2624,17 @@
                 });
             }
             applyOrderTriggerVisibility();
-            Promise.allSettled([loadGroupTokenOptions(), loadPatientEducationOptions()]).finally(() => loadOrders());
+            const edH = document.getElementById('editDeliveryHospital');
+            if (edH) {
+                edH.addEventListener('input', function () { scheduleHospitalSuggest('edit'); });
+                edH.addEventListener('focus', function () { fillHospitalDatalist('editHospitalDatalist', edH.value || ''); });
+            }
+            const mdH = document.getElementById('manualDeliveryHospital');
+            if (mdH) {
+                mdH.addEventListener('input', function () { scheduleHospitalSuggest('manual'); });
+                mdH.addEventListener('focus', function () { fillHospitalDatalist('manualHospitalDatalist', mdH.value || ''); });
+            }
+            Promise.allSettled([loadGroupTokenOptions()]).finally(() => loadOrders());
             connectMcpOrderAuditWebSocket();
             const tabShip = document.getElementById('mcp-tab-shipment');
             if (tabShip) {
