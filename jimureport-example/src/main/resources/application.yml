@@ -160,12 +160,13 @@ jeecg:
       - 40
     ai:
       jeecg-host: http://localhost:8080/jeecgboot/
+# 云雾 OpenAI 兼容接口（聊天记录提取等；与 DashScopeProperties 前缀一致：yunwu.api.*）
 yunwu:
-  base-url: https://yunwu.ai/v1/chat/completions
-  # 请不要把真实 key 提交到代码仓库，可通过环境变量 YUNWU_API_KEY 注入
-  # sk-lI3QY06uPrDsVVL16mjZftfmartq9peINATCWvrD4VvGLWS1
-  api-key: ${YUNWU_API_KEY:sk-lI3QY06uPrDsVVL16mjZftfmartq9peINATCWvrD4VvGLWS1}
-  model: gpt-4.1-mini-2025-04-14
+  api:
+    url: https://yunwu.ai/v1/chat/completions
+    # 请不要把真实 key 提交到代码仓库，可通过环境变量 YUNWU_API_KEY 注入
+    api-key: ${YUNWU_API_KEY:sk-lI3QY06uPrDsVVL16mjZftfmartq9peINATCWvrD4VvGLWS1}
+    model: gpt-4.1-mini-2025-04-14
 # 中台下单接口（/mcp/core_order_create 使用）
 middle-platform:
   # 文档示例环境：http://test-cn.your-api-server.com
