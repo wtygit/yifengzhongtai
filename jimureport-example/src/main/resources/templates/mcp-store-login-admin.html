@@ -148,6 +148,7 @@
                         '<div class="input-group input-group-sm">' +
                         '<input type="password" class="form-control store-pwd" data-store="' + escapeHtml(sid) + '" placeholder="新密码，留空则清除专属"/>' +
                         '<button class="btn btn-outline-primary btn-save" data-store="' + escapeHtml(sid) + '">保存</button>' +
+                        '<button class="btn btn-outline-danger btn-delete" data-store="' + escapeHtml(sid) + '">删除</button>' +
                         '</div></td>';
                     tb.appendChild(tr);
                 });
@@ -164,6 +165,23 @@
                                 } else {
                                     showAlert('danger', r.msg || '失败');
                                 }
+                            });
+                    });
+                });
+                document.querySelectorAll('.btn-delete').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        const sid = btn.getAttribute('data-store');
+                        if (!confirm('确定要删除门店账号 ' + sid + ' 吗？')) return;
+                        postJson(BASE + '/mcp/store-login-admin/api/store-account-delete', {storeId: sid})
+                            .then(function (r) {
+                                if (r.code === 200) {
+                                    showAlert('success', '门店 ' + sid + ' 已删除');
+                                    loadStores();
+                                } else {
+                                    showAlert('danger', r.msg || '删除失败');
+                                }
+                            }).catch(function (e) {
+                                showAlert('danger', (e && e.message) ? e.message : '删除请求失败');
                             });
                     });
                 });

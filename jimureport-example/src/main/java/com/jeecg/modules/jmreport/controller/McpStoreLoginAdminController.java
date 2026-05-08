@@ -134,6 +134,26 @@ public class McpStoreLoginAdminController {
         return ApiResult.okMsg("管理员密码已更新，请重新登录", null);
     }
 
+    /**
+     * 删除门店账号
+     */
+    @PostMapping("/mcp/store-login-admin/api/store-account-delete")
+    @ResponseBody
+    public Map<String, Object> deleteStoreAccount(@RequestBody Map<String, Object> body) {
+        if (!isMcpAdmin()) {
+            return ApiResult.error(403, "需要管理员登录");
+        }
+        String storeId = body != null && body.get("storeId") != null ? String.valueOf(body.get("storeId")).trim() : "";
+        if (!StringUtils.hasText(storeId)) {
+            return ApiResult.error(400, "storeId 不能为空");
+        }
+        int n = mcpStoreLoginService.deleteStoreAccount(storeId);
+        if (n <= 0) {
+            return ApiResult.error(404, "未找到该门店账号");
+        }
+        return ApiResult.okMsg("门店账号已删除", Map.of("storeId", storeId));
+    }
+
     private boolean isMcpAdmin() {
         try {
             if (!StpUtil.isLogin()) {
@@ -147,8 +167,9 @@ public class McpStoreLoginAdminController {
             } else if ("true".equalsIgnoreCase(String.valueOf(v))) {
                 return true;
             }
+            // 取消门店编辑限制：所有已登录账号都能编辑门店
             String loginId = StpUtil.getLoginIdAsString();
-            return StringUtils.hasText(loginId) && !loginId.trim().startsWith("store:");
+            return StringUtils.hasText(loginId);
         } catch (SaTokenContextException e) {
             return false;
         } catch (Exception e) {

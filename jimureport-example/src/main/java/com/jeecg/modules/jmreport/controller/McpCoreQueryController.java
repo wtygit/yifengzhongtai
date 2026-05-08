@@ -165,6 +165,7 @@ public class McpCoreQueryController {
                 || StringUtils.hasText(request.getGroupName())
                 || StringUtils.hasText(request.getOrderRemark())
                 || StringUtils.hasText(request.getUserGroupNickname())
+                || StringUtils.hasText(request.getY3ImageInfo())
                 || StringUtils.hasText(request.getRequestJson());
         if (structured) {
             java.util.Map<String, Object> map = new java.util.HashMap<>();
@@ -191,6 +192,9 @@ public class McpCoreQueryController {
                 ciMap.put("remark", ci.getRemark());
                 ciMap.put("storeId", ci.getStoreId());
                 map.put("chatInfo", ciMap);
+            }
+            if (StringUtils.hasText(request.getY3ImageInfo())) {
+                map.put("y3ImageInfo", request.getY3ImageInfo());
             }
             map.put("items", request.getItems() != null ? request.getItems() : java.util.List.of());
             map.put("requestJson", request.getRequestJson());
@@ -508,6 +512,9 @@ public class McpCoreQueryController {
         private String requestTriggerType;
         /** 药品明细，可选；兼容数组或字符串 "[]"（上游部分通道会把 JSON 数组转成字符串） */
         private Object items;
+        /** 聊天截图（图片URL或base64，支持单个URL或JSON数组格式） */
+        @JsonAlias({"y3_image_info", "y3PicUrl"})
+        private String y3ImageInfo;
     }
 
     @Data
@@ -581,6 +588,72 @@ public class McpCoreQueryController {
          * 审核备注（通过时可选，驳回时必填）
          */
         private String auditRemark;
+    }
+
+    /**
+     * 测试海典数据源连接（调试用）
+     */
+    @GetMapping("/test-haidian-db")
+    public Map<String, Object> testHaidianDb() {
+        return mcpCoreQueryService.testHaidianDbConnection();
+    }
+
+    /**
+     * 创建患者信息接口
+     * 将患者信息写入海典数据库 corecmsuser 表
+     */
+    @PostMapping("/create-patient")
+    public Map<String, Object> createPatient(@RequestBody CreatePatientRequest request) {
+        String name = request != null ? request.getName() : null;
+        String phone = request != null ? request.getPhone() : null;
+        String idCard = request != null ? request.getIdCard() : null;
+        String gender = request != null ? request.getGender() : null;
+        Integer age = request != null ? request.getAge() : null;
+        String address = request != null ? request.getAddress() : null;
+        String remark = request != null ? request.getRemark() : null;
+        log.info("MCP create-patient 请求，name={}, phone={}, idCard={}", name, phone, idCard);
+        return mcpCoreQueryService.createPatient(name, phone, idCard, gender, age, address, remark);
+    }
+
+    /**
+     * create-patient 请求体
+     */
+    @Data
+    public static class CreatePatientRequest {
+        /**
+         * 患者姓名（必填）
+         */
+        private String name;
+        
+        /**
+         * 手机号（必填）
+         */
+        private String phone;
+        
+        /**
+         * 身份证号（可选）
+         */
+        private String idCard;
+        
+        /**
+         * 性别（可选）：男/女
+         */
+        private String gender;
+        
+        /**
+         * 年龄（可选）
+         */
+        private Integer age;
+        
+        /**
+         * 地址（可选）
+         */
+        private String address;
+        
+        /**
+         * 备注（可选）
+         */
+        private String remark;
     }
 }
 

@@ -59,4 +59,9 @@ public interface McpStoreLoginService {
      * 手动新增或更新门店账号（写入 jm_mcp_store_login），用于海典尚未同步到的门店号。
      */
     int upsertStoreAccount(String storeId, String storeName);
+
+    /**
+     * 删除门店账号（从 jm_mcp_store_login 删除）
+     */
+    int deleteStoreAccount(String storeId);
 }

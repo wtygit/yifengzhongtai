@@ -357,4 +357,14 @@ public class McpStoreLoginServiceImpl implements McpStoreLoginService {
             return null;
         }
     }
+
+    @Override
+    public int deleteStoreAccount(String storeId) {
+        ensureLocalTable();
+        if (!StringUtils.hasText(storeId)) {
+            return 0;
+        }
+        String id = storeId.trim();
+        return jdbcTemplate.update("DELETE FROM " + TABLE + " WHERE store_id = ?", id);
+    }
 }

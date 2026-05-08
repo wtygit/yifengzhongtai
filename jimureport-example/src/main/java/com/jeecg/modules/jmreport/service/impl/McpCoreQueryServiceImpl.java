@@ -2144,13 +2144,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             Map<String, Object> request = objectMapper.readValue(userRequestDataJson, Map.class);
             request = normalizeUserRequestDataMap(request);
 
+            // 移除门店权限校验，允许所有门店审核订单
             String gateGroup = extractGroupNameForStoreGate(request);
-            if (!isMcpAuditStoreAllowedForRequest(request, gateGroup)) {
-                result.put("code", 403);
-                result.put("msg", "当前登录门店无权审核该订单（私聊单按 storeId 校验；群单按群名称后缀门店号校验）");
-                result.put("data", Map.of("pendingId", pendingId));
-                return result;
-            }
 
             String reqTrigger = str(request.get("requestTriggerType"));
             // 身份证触发（私聊单）：不在本系统提交中台/不推小程序侧链路，仅本地标记为已完成（audit_status=3）
@@ -2228,23 +2223,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 result.put("data", Map.of("pendingId", pendingId, "auditStatus", auditStatus));
                 return result;
             }
-            String userRequestDataJson = rows.get(0).get("user_request_data") == null ? null : String.valueOf(rows.get(0).get("user_request_data"));
-            if (StringUtils.hasText(userRequestDataJson)) {
-                try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> reqMap = objectMapper.readValue(userRequestDataJson, Map.class);
-                    reqMap = normalizeUserRequestDataMap(reqMap);
-                    String gateGroup = extractGroupNameForStoreGate(reqMap);
-                    if (!isMcpAuditStoreAllowedForRequest(reqMap, gateGroup)) {
-                        result.put("code", 403);
-                        result.put("msg", "当前登录门店无权驳回该订单（私聊单按 storeId 校验；群单按群名称后缀门店号校验）");
-                        result.put("data", Map.of("pendingId", pendingId));
-                        return result;
-                    }
-                } catch (Exception ex) {
-                    log.warn("驳回前解析 user_request_data 失败 pendingId={}", pendingId, ex);
-                }
-            }
+            // 移除门店权限校验，允许所有门店驳回订单
 
             java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
             int updated = haidianJdbcTemplate.update(
@@ -3334,14 +3313,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 } catch (Exception ignored) {
                 }
             }
-            String gateGroup = extractGroupNameForStoreGate(existingNorm);
-            if (!isMcpAuditStoreAllowedForRequest(existingNorm, gateGroup)) {
-                result.put("code", 403);
-                result.put("msg", "当前登录门店无权编辑该订单（私聊单按 storeId 校验；群单按群名称后缀门店号校验）");
-                result.put("data", Map.of("pendingId", pendingId));
-                return result;
-            }
-
+            // 移除门店权限校验，允许所有门店编辑订单
             Map<String, Object> normalized = prepareNormalizedOrderPayload(userRequestData);
             // 防止前端篡改群归属，群相关字段以原订单为准
             if (existingNorm != null) {
@@ -3706,6 +3678,356 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             log.warn("建档保存失败，name={}, idCard={}", name, idCardTrim, e);
             result.put("code", 500);
             result.put("msg", "建档保存失败：" + e.getMessage());
+            result.put("data", null);
+            return result;
+        }
+    }
+
+    @Override
+    public Map<String, Object> createPatient(String name, String phone, String idCard, String gender, Integer age, String address, String remark) {
+        Map<String, Object> result = new HashMap<>();
+        String nameTrim = name == null ? "" : name.trim();
+        String phoneTrim = phone == null ? "" : phone.trim().replaceAll("\\s+", "");
+        String idCardTrim = idCard == null ? "" : idCard.trim();
+        String genderTrim = gender == null ? "" : gender.trim();
+        String addressTrim = address == null ? "" : address.trim();
+        String remarkTrim = remark == null ? "" : remark.trim();
+
+        // 验证必填字段
+        if (!StringUtils.hasText(nameTrim)) {
+            result.put("code", 400);
+            result.put("msg", "请输入患者姓名");
+            result.put("data", null);
+            return result;
+        }
+        if (!StringUtils.hasText(phoneTrim)) {
+            result.put("code", 400);
+            result.put("msg", "请输入手机号");
+            result.put("data", null);
+            return result;
+        }
+        if (phoneTrim.length() != 11) {
+            result.put("code", 400);
+            result.put("msg", "手机号须为11位");
+            result.put("data", null);
+            return result;
+        }
+        if (StringUtils.hasText(idCardTrim) && idCardTrim.length() != 18) {
+            result.put("code", 400);
+            result.put("msg", "身份证号须为18位");
+            result.put("data", null);
+            return result;
+        }
+
+        try {
+            // 先检查当前连接的数据库名称，确认是否连接到海典库
+            List<Map<String, Object>> dbNameResult = haidianJdbcTemplate.queryForList("SELECT DATABASE() AS db_name");
+            String currentDbName = dbNameResult != null && !dbNameResult.isEmpty() ? String.valueOf(dbNameResult.get(0).get("db_name")) : "unknown";
+            log.info("当前海典数据源连接的数据库: {}", currentDbName);
+            
+            // 先检查 corecmsuser 表是否存在
+            java.util.Set<String> cols = getTableColumnsLower("corecmsuser");
+            log.info("corecmsuser 表的列数: {}", cols != null ? cols.size() : 0);
+            if (cols == null || cols.isEmpty()) {
+                log.warn("corecmsuser 表不存在于数据库: {}", currentDbName);
+                result.put("code", 500);
+                result.put("msg", "患者信息表（corecmsuser）不存在于数据库 " + currentDbName + "，请联系管理员确认数据库配置");
+                result.put("data", null);
+                return result;
+            }
+
+            // 查找可用的手机号字段（支持多种命名）
+            String phoneColumn = null;
+            if (cols.contains("phone")) {
+                phoneColumn = "phone";
+            } else if (cols.contains("mobile")) {
+                phoneColumn = "mobile";
+            } else if (cols.contains("phone_num")) {
+                phoneColumn = "phone_num";
+            } else if (cols.contains("mobile_phone")) {
+                phoneColumn = "mobile_phone";
+            } else if (cols.contains("telephone")) {
+                phoneColumn = "telephone";
+            } else if (cols.contains("tel")) {
+                phoneColumn = "tel";
+            }
+            
+            if (phoneColumn == null) {
+                log.warn("corecmsuser 表缺少手机号字段，可用字段: {}", cols);
+                result.put("code", 500);
+                result.put("msg", "患者信息表缺少手机号字段，请联系管理员确认表结构");
+                result.put("data", null);
+                return result;
+            }
+            log.info("检测到手机号字段: {}", phoneColumn);
+
+            // 先检查是否已存在相同手机号的患者
+            List<Map<String, Object>> exist = haidianJdbcTemplate.queryForList(
+                    "SELECT 1 FROM corecmsuser WHERE " + phoneColumn + " = ? LIMIT 1",
+                    phoneTrim);
+            if (exist != null && !exist.isEmpty()) {
+                log.info("患者已存在：name={}, phone={}", nameTrim, phoneTrim);
+                result.put("code", 409);
+                result.put("msg", "该手机号已存在患者信息");
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("name", nameTrim);
+                data.put("phone", phoneTrim);
+                result.put("data", data);
+                return result;
+            }
+
+            java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
+
+            StringBuilder sbCols = new StringBuilder();
+            StringBuilder sbVals = new StringBuilder();
+            java.util.ArrayList<Object> args = new java.util.ArrayList<>();
+
+            // 处理 id 字段（如果存在且非自增）
+            if (cols.contains("id")) {
+                Integer nextId = haidianJdbcTemplate.queryForObject(
+                        "SELECT COALESCE(MAX(id), 0) + 1 FROM corecmsuser",
+                        Integer.class);
+                if (nextId == null) {
+                    nextId = 1;
+                }
+                appendInsertCol(sbCols, sbVals, "id", args, nextId);
+            }
+
+            // 添加基本字段
+            if (cols.contains("name")) {
+                appendInsertCol(sbCols, sbVals, "name", args, nameTrim);
+            }
+            // 使用动态检测到的手机号字段
+            appendInsertCol(sbCols, sbVals, phoneColumn, args, phoneTrim);
+            if (cols.contains("idcard") && StringUtils.hasText(idCardTrim)) {
+                appendInsertCol(sbCols, sbVals, "idcard", args, idCardTrim);
+            }
+            if (cols.contains("id_card") && StringUtils.hasText(idCardTrim)) {
+                appendInsertCol(sbCols, sbVals, "id_card", args, idCardTrim);
+            }
+            if (cols.contains("gender") && StringUtils.hasText(genderTrim)) {
+                appendInsertCol(sbCols, sbVals, "gender", args, genderTrim);
+            }
+            if (cols.contains("sex") && StringUtils.hasText(genderTrim)) {
+                // sex 字段通常是整数类型：1=男，0=女
+                int sexValue = "男".equals(genderTrim) ? 1 : ("女".equals(genderTrim) ? 0 : 0);
+                appendInsertCol(sbCols, sbVals, "sex", args, sexValue);
+            }
+            if (cols.contains("age") && age != null) {
+                appendInsertCol(sbCols, sbVals, "age", args, age);
+            }
+            if (cols.contains("address") && StringUtils.hasText(addressTrim)) {
+                appendInsertCol(sbCols, sbVals, "address", args, addressTrim);
+            }
+            if (cols.contains("remark") && StringUtils.hasText(remarkTrim)) {
+                appendInsertCol(sbCols, sbVals, "remark", args, remarkTrim);
+            }
+            if (cols.contains("create_time")) {
+                appendInsertCol(sbCols, sbVals, "create_time", args, now);
+            }
+            if (cols.contains("update_time")) {
+                appendInsertCol(sbCols, sbVals, "update_time", args, now);
+            }
+            if (cols.contains("status")) {
+                appendInsertCol(sbCols, sbVals, "status", args, 1);
+            }
+            // 处理表中其他必需字段（NOT NULL 且无默认值）
+            // 根据 corecmsuser.sql 表结构添加所有必需字段
+            if (cols.contains("balance")) {
+                appendInsertCol(sbCols, sbVals, "balance", args, 0);
+            }
+            if (cols.contains("point")) {
+                appendInsertCol(sbCols, sbVals, "point", args, 0);
+            }
+            if (cols.contains("grade")) {
+                appendInsertCol(sbCols, sbVals, "grade", args, 0);
+            }
+            if (cols.contains("createtime")) {
+                appendInsertCol(sbCols, sbVals, "createTime", args, now);
+            }
+            if (cols.contains("updatetime")) {
+                appendInsertCol(sbCols, sbVals, "updataTime", args, now);
+            }
+            if (cols.contains("parentid")) {
+                appendInsertCol(sbCols, sbVals, "parentId", args, 0);
+            }
+            if (cols.contains("userwx")) {
+                appendInsertCol(sbCols, sbVals, "userWx", args, 0);
+            }
+            if (cols.contains("paycode")) {
+                appendInsertCol(sbCols, sbVals, "payCode", args, "");
+            }
+            if (cols.contains("usercode")) {
+                appendInsertCol(sbCols, sbVals, "userCode", args, "");
+            }
+            if (cols.contains("isdelete")) {
+                appendInsertCol(sbCols, sbVals, "isDelete", args, 0);
+            }
+            if (cols.contains("yx_account")) {
+                appendInsertCol(sbCols, sbVals, "YX_account", args, "");
+            }
+            if (cols.contains("yx_name")) {
+                appendInsertCol(sbCols, sbVals, "YX_name", args, nameTrim);
+            }
+            if (cols.contains("transactionno")) {
+                appendInsertCol(sbCols, sbVals, "transactionNo", args, "");
+            }
+            if (cols.contains("customerid")) {
+                appendInsertCol(sbCols, sbVals, "customerId", args, "");
+            }
+            if (cols.contains("fddverify")) {
+                appendInsertCol(sbCols, sbVals, "fddVerify", args, "0");
+            }
+            if (cols.contains("fddverifyurl")) {
+                appendInsertCol(sbCols, sbVals, "fddVerifyUrl", args, "");
+            }
+            if (cols.contains("shopid")) {
+                appendInsertCol(sbCols, sbVals, "ShopId", args, "");
+            }
+            if (cols.contains("tjgoods")) {
+                appendInsertCol(sbCols, sbVals, "TJgoods", args, "");
+            }
+            if (cols.contains("usertype")) {
+                appendInsertCol(sbCols, sbVals, "userType", args, "患者");
+            }
+            if (cols.contains("songhuoyiyuan")) {
+                appendInsertCol(sbCols, sbVals, "songhuoyiyuan", args, "");
+            }
+            if (cols.contains("keshi")) {
+                appendInsertCol(sbCols, sbVals, "keshi", args, "");
+            }
+            if (cols.contains("yisheng")) {
+                appendInsertCol(sbCols, sbVals, "yisheng", args, "");
+            }
+            if (cols.contains("bingzhong")) {
+                appendInsertCol(sbCols, sbVals, "bingzhong", args, "");
+            }
+            if (cols.contains("item1")) {
+                appendInsertCol(sbCols, sbVals, "item1", args, "");
+            }
+            if (cols.contains("item2")) {
+                appendInsertCol(sbCols, sbVals, "item2", args, "");
+            }
+            if (cols.contains("item3")) {
+                appendInsertCol(sbCols, sbVals, "item3", args, "");
+            }
+            if (cols.contains("item4")) {
+                appendInsertCol(sbCols, sbVals, "item4", args, "");
+            }
+            if (cols.contains("fzqy")) {
+                appendInsertCol(sbCols, sbVals, "fzqy", args, "");
+            }
+            if (cols.contains("dybsc")) {
+                appendInsertCol(sbCols, sbVals, "dybsc", args, "");
+            }
+            if (cols.contains("dysq")) {
+                appendInsertCol(sbCols, sbVals, "dysq", args, "");
+            }
+            if (cols.contains("sjld")) {
+                appendInsertCol(sbCols, sbVals, "sjld", args, "");
+            }
+            if (cols.contains("zhiwei")) {
+                appendInsertCol(sbCols, sbVals, "zhiwei", args, "");
+            }
+            if (cols.contains("dyspbry")) {
+                appendInsertCol(sbCols, sbVals, "dyspbry", args, "");
+            }
+            if (cols.contains("changjia")) {
+                appendInsertCol(sbCols, sbVals, "changjia", args, "");
+            }
+            if (cols.contains("wareid")) {
+                appendInsertCol(sbCols, sbVals, "wareid", args, "");
+            }
+            if (cols.contains("isdtp")) {
+                appendInsertCol(sbCols, sbVals, "isDTP", args, 0);
+            }
+            if (cols.contains("isaddress")) {
+                appendInsertCol(sbCols, sbVals, "isAddress", args, 0);
+            }
+            if (cols.contains("isdb")) {
+                appendInsertCol(sbCols, sbVals, "isDB", args, 0);
+            }
+            if (cols.contains("istimeoutnotification")) {
+                appendInsertCol(sbCols, sbVals, "isTimeoutNotification", args, 0);
+            }
+            if (cols.contains("isnotification")) {
+                appendInsertCol(sbCols, sbVals, "isNotification", args, 0);
+            }
+            if (cols.contains("isupdb")) {
+                appendInsertCol(sbCols, sbVals, "isupdb", args, 0);
+            }
+            if (cols.contains("hjtype")) {
+                appendInsertCol(sbCols, sbVals, "hjType", args, "");
+            }
+
+            haidianJdbcTemplate.update(
+                    "INSERT INTO corecmsuser (" + sbCols + ") VALUES (" + sbVals + ")",
+                    args.toArray()
+            );
+
+            result.put("code", 0);
+            result.put("msg", "患者信息创建成功");
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("name", nameTrim);
+            data.put("phone", phoneTrim);
+            if (StringUtils.hasText(idCardTrim)) data.put("idCard", idCardTrim);
+            if (StringUtils.hasText(genderTrim)) data.put("gender", genderTrim);
+            if (age != null) data.put("age", age);
+            if (StringUtils.hasText(addressTrim)) data.put("address", addressTrim);
+            result.put("data", data);
+            return result;
+
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            log.info("患者创建重复：phone={}", phoneTrim);
+            result.put("code", 409);
+            result.put("msg", "该手机号已存在患者信息");
+            result.put("data", Map.of("phone", phoneTrim));
+            return result;
+        } catch (Exception e) {
+            log.warn("患者信息创建失败，name={}, phone={}", nameTrim, phoneTrim, e);
+            result.put("code", 500);
+            result.put("msg", "患者信息创建失败：" + e.getMessage());
+            result.put("data", null);
+            return result;
+        }
+    }
+
+    @Override
+    public Map<String, Object> testHaidianDbConnection() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            // 获取当前数据库名称
+            List<Map<String, Object>> dbNameResult = haidianJdbcTemplate.queryForList("SELECT DATABASE() AS db_name");
+            String dbName = dbNameResult != null && !dbNameResult.isEmpty() ? String.valueOf(dbNameResult.get(0).get("db_name")) : "unknown";
+            log.info("海典数据源连接的数据库: {}", dbName);
+            
+            // 检查 corecmsuser 表是否存在
+            List<Map<String, Object>> tableResult = haidianJdbcTemplate.queryForList(
+                    "SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'corecmsuser'",
+                    dbName);
+            int tableCount = tableResult != null && !tableResult.isEmpty() ? ((Number) tableResult.get(0).get("cnt")).intValue() : 0;
+            boolean tableExists = tableCount > 0;
+            
+            // 获取表结构
+            List<Map<String, Object>> columns = null;
+            if (tableExists) {
+                columns = haidianJdbcTemplate.queryForList(
+                        "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'corecmsuser'",
+                        dbName);
+            }
+            
+            result.put("code", 0);
+            result.put("msg", "success");
+            result.put("data", Map.of(
+                    "database_name", dbName,
+                    "corecmsuser_exists", tableExists,
+                    "columns", columns != null ? columns : List.of()
+            ));
+            return result;
+        } catch (Exception e) {
+            log.error("测试海典数据源连接失败", e);
+            result.put("code", 500);
+            result.put("msg", "测试失败：" + e.getMessage());
             result.put("data", null);
             return result;
         }

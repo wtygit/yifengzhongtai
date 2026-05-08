@@ -83,6 +83,27 @@ public interface McpCoreQueryService {
     Map<String, Object> createProfile(String name, String idCard, String mobile);
 
     /**
+     * 创建患者信息接口：写入海典数据库 corecmsuser 表
+     *
+     * @param name    患者姓名（必填）
+     * @param phone   手机号（必填）
+     * @param idCard  身份证号（可选）
+     * @param gender  性别（可选）：男/女
+     * @param age     年龄（可选）
+     * @param address 地址（可选）
+     * @param remark  备注（可选）
+     * @return 统一返回结构：{code, msg, data}，data 为插入后的记录摘要
+     */
+    Map<String, Object> createPatient(String name, String phone, String idCard, String gender, Integer age, String address, String remark);
+
+    /**
+     * 测试海典数据源连接（调试用）
+     *
+     * @return 数据库连接信息
+     */
+    Map<String, Object> testHaidianDbConnection();
+
+    /**
      * 审核通过：从表A读取数据，调用中台接口，写入表B，更新表A状态
      *
      * @param pendingId 待审核订单的pendingId

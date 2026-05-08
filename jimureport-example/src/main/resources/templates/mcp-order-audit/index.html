@@ -208,11 +208,13 @@
     </nav>
 
     <div class="container-fluid mt-4">
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-            <h2 class="mb-0">MCP 订单与发货</h2>
-            <span th:if="${mcpAuditAdminBypass}" class="badge bg-success">管理员模式：权限不受门店限制</span>
-            <span th:if="${!mcpAuditAdminBypass and mcpAuditStoreId != null and !#strings.isEmpty(mcpAuditStoreId)}" class="badge bg-secondary">登录门店编号：<span th:text="${mcpAuditStoreId}">-</span></span>
-            <span th:if="${!mcpAuditAdminBypass and (mcpAuditStoreId == null or #strings.isEmpty(mcpAuditStoreId))}" class="badge bg-warning text-dark">未选择登录门店：带门店后缀的群订单将无法编辑/下单</span>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <h2 class="mb-0">MCP 订单与发货</h2>
+                <span th:if="${mcpAuditAdminBypass}" class="badge bg-success">管理员模式：权限不受门店限制</span>
+                <span th:if="${!mcpAuditAdminBypass and mcpAuditStoreId != null and !#strings.isEmpty(mcpAuditStoreId)}" class="badge bg-secondary">登录门店编号：<span th:text="${mcpAuditStoreId}">-</span></span>
+                <span th:if="${!mcpAuditAdminBypass and (mcpAuditStoreId == null or #strings.isEmpty(mcpAuditStoreId))}" class="badge bg-warning text-dark">未选择登录门店：带门店后缀的群订单将无法编辑/下单</span>
+            </div>
         </div>
         <ul class="nav nav-tabs" role="tablist">
             <li class="nav-item" role="presentation">
@@ -390,7 +392,8 @@
                         </div>
                         <div class="mb-3">
                             <label for="editY3ImageInfo" class="form-label">聊天截图</label>
-                            <textarea class="form-control bg-light" id="editY3ImageInfo" rows="2" readonly placeholder="由系统传入，只读"></textarea>
+                            <input type="hidden" id="editY3ImageInfo" value="">
+                            <div id="editY3ImagePreview" class="y3-image-preview" style="min-height: 60px; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px; background-color: #f8f9fa;"></div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">药品信息</label>
@@ -689,11 +692,8 @@
             return m[1].replace(/，/g, ',').split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
         }
         function canEditOrderByGroupName(groupName) {
-            if (MCP_AUDIT_ADMIN_BYPASS) return true;
-            const storeIds = storeIdsFromGroupNameText(groupName || '');
-            if (!storeIds.length) return false;
-            if (!MCP_AUDIT_STORE_ID) return false;
-            return storeIds.includes(MCP_AUDIT_STORE_ID);
+            // 取消门店编辑限制：所有门店都可以编辑任何订单数据
+            return true;
         }
         /** audit_status：0 待下单，1 已下单，2 已驳回，3 身份证私聊单本地已完成 */
         function formatOrderAuditStatusText(auditStatus) {
@@ -711,6 +711,109 @@
             if (st === 2) return 'status-rejected';
             if (st === 3) return 'status-completed';
             return 'status-pending';
+        }
+        function renderY3ImageInfo(y3ImageInfo) {
+            if (!y3ImageInfo) return '';
+            const trimmed = y3ImageInfo.trim();
+            if (!trimmed) return '';
+            try {
+                const urls = JSON.parse(trimmed);
+                if (Array.isArray(urls) && urls.length > 0) {
+                    const validUrls = urls.filter(u => typeof u === 'string' && u.trim());
+                    if (validUrls.length === 0) {
+                        return escapeHtml(trimmed.length > 40 ? trimmed.substring(0, 40) + '…' : trimmed);
+                    }
+                    let html = '';
+                    validUrls.slice(0, 5).forEach((url, idx) => {
+                        const escapedUrl = escapeHtml(url.trim());
+                        html += `<img src="${escapedUrl}" style="max-width: 60px; max-height: 60px; margin-right: 4px; border-radius: 2px; cursor: pointer;" 
+                                   onclick="showY3ImageModal('${escapedUrl}')" 
+                                   title="点击查看大图" 
+                                   data-index="${idx}">`;
+                    });
+                    if (validUrls.length > 5) {
+                        html += `<span class="text-muted small">+${validUrls.length - 5}</span>`;
+                    }
+                    return html;
+                }
+            } catch (e) {
+            }
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/')) {
+                const escapedUrl = escapeHtml(trimmed);
+                return `<img src="${escapedUrl}" style="max-width: 60px; max-height: 60px; border-radius: 2px; cursor: pointer;" 
+                           onclick="showY3ImageModal('${escapedUrl}')" 
+                           title="点击查看大图">`;
+            }
+            return escapeHtml(trimmed.length > 40 ? trimmed.substring(0, 40) + '…' : trimmed);
+        }
+        function showY3ImageModal(url) {
+            const modal = document.createElement('div');
+            modal.className = 'modal fade show';
+            modal.style.display = 'block';
+            modal.style.backgroundColor = 'rgba(0,0,0,0.7)';
+            modal.style.position = 'fixed';
+            modal.style.top = 0;
+            modal.style.left = 0;
+            modal.style.right = 0;
+            modal.style.bottom = 0;
+            modal.style.zIndex = 9999;
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.onclick = function() { modal.remove(); };
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.maxWidth = '90vw';
+            img.style.maxHeight = '90vh';
+            img.style.borderRadius = '8px';
+            img.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+            img.onclick = function(e) { e.stopPropagation(); };
+            modal.appendChild(img);
+            document.body.appendChild(modal);
+        }
+        function renderY3ImagePreview(containerId, y3ImageInfo) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            if (!y3ImageInfo || !y3ImageInfo.trim()) {
+                container.innerHTML = '<span class="text-muted small">暂无聊天截图</span>';
+                return;
+            }
+            
+            const trimmed = y3ImageInfo.trim();
+            try {
+                const urls = JSON.parse(trimmed);
+                if (Array.isArray(urls) && urls.length > 0) {
+                    const validUrls = urls.filter(u => typeof u === 'string' && u.trim());
+                    if (validUrls.length === 0) {
+                        container.innerHTML = '<span class="text-muted small">无效的图片数据</span>';
+                        return;
+                    }
+                    let html = '';
+                    validUrls.slice(0, 5).forEach((url, idx) => {
+                        const escapedUrl = escapeHtml(url.trim());
+                        html += `<img src="${escapedUrl}" style="max-width: 80px; max-height: 80px; margin-right: 8px; margin-bottom: 8px; border-radius: 4px; cursor: pointer; border: 1px solid #dee2e6;" 
+                                   onclick="showY3ImageModal('${escapedUrl}')" 
+                                   title="点击查看大图">`;
+                    });
+                    if (validUrls.length > 5) {
+                        html += `<span class="text-muted small">还有 ${validUrls.length - 5} 张图片...</span>`;
+                    }
+                    container.innerHTML = html;
+                    return;
+                }
+            } catch (e) {
+            }
+            
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/')) {
+                const escapedUrl = escapeHtml(trimmed);
+                container.innerHTML = `<img src="${escapedUrl}" style="max-width: 120px; max-height: 120px; border-radius: 4px; cursor: pointer; border: 1px solid #dee2e6;" 
+                                       onclick="showY3ImageModal('${escapedUrl}')" 
+                                       title="点击查看大图">`;
+                return;
+            }
+            
+            container.innerHTML = `<span class="text-muted small">${trimmed.length > 50 ? trimmed.substring(0, 50) + '…' : trimmed}</span>`;
         }
         function applyOrderTriggerVisibility() {
             const isIdcard = currentOrderTriggerType === 'idcard';
@@ -1507,7 +1610,8 @@
                 const canStore = (currentOrderTriggerType === 'idcard') ? true : canEditOrderByGroupName(order.group_name || '');
                 const ro = canStore ? '' : ' readonly';
                 const storeDisplay = order.store_ids || (storeIdsFromGroupNameText(order.group_name || '').join(','));
-                const y3Short = (order.y3_image_info || '').length > 40 ? escapeHtml((order.y3_image_info || '').substring(0, 40)) + '…' : escapeHtml(order.y3_image_info || '');
+                const y3ImageInfo = order.y3_image_info || '';
+                const y3Html = renderY3ImageInfo(y3ImageInfo);
                 const checked = selectedOrderPendingIds.has(pendingId) ? ' checked' : '';
                 html += `
                     <tr data-pending-id="${pendingId}">
@@ -1547,7 +1651,7 @@
                         <td class="small text-break">${escapeHtml(order.delivery_hospital || '-')}</td>
                         <td class="small text-break">${escapeHtml(order.order_remark || '-')}</td>
                         <td class="small text-break">${escapeHtml(order.user_group_nickname || '-')}</td>
-                        <td class="small text-break" title="${escapeHtml(order.y3_image_info || '')}">${order.y3_image_info ? y3Short : '-'}</td>
+                        <td class="small text-break" title="${escapeHtml(order.y3_image_info || '')}">${y3Html || '-'}</td>
                         <td>${createTime}</td>
                         <td style="position: relative; overflow: visible;">
                             ${drugs.length > 0 ? 
@@ -1850,7 +1954,11 @@
             document.getElementById('editUserGroupNickname').value = order.user_group_nickname || '';
             document.getElementById('editDeliveryHospital').value = order.delivery_hospital || '';
             document.getElementById('editOrderRemark').value = order.order_remark || '';
-            document.getElementById('editY3ImageInfo').value = order.y3_image_info || '';
+            const y3ImageInfo = order.y3_image_info || '';
+            document.getElementById('editY3ImageInfo').value = y3ImageInfo;
+            
+            // 渲染聊天图片预览
+            renderY3ImagePreview('editY3ImagePreview', y3ImageInfo);
 
             // 渲染药品列表
             renderDrugList(drugs);
@@ -2657,6 +2765,7 @@
                 });
             }
         };
+
     </script>
 </body>
 </html>
