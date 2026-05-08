@@ -393,7 +393,13 @@
                         <div class="mb-3">
                             <label for="editY3ImageInfo" class="form-label">聊天截图</label>
                             <input type="hidden" id="editY3ImageInfo" value="">
-                            <div id="editY3ImagePreview" class="y3-image-preview" style="min-height: 60px; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px; background-color: #f8f9fa;"></div>
+                            <input type="file" id="editY3ImageFileInput" class="d-none" accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp" multiple onchange="onEditY3ScreenshotFilesSelected(event)">
+                            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="editY3UploadBtn" onclick="triggerEditY3ScreenshotUpload()">选择图片上传</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearEditY3Screenshots()">清空截图</button>
+                            </div>
+                            <div class="text-muted small mb-2">单张最大 20MB，支持 JPG / PNG / GIF / WebP；可一次选多张，保存后写入订单字段（URL 或 URL 列表）。</div>
+                            <div id="editY3ImagePreview" class="y3-image-preview" style="min-height: 60px; max-height: 240px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px; background-color: #f8f9fa;"></div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">药品信息</label>
@@ -815,6 +821,123 @@
             
             container.innerHTML = `<span class="text-muted small">${trimmed.length > 50 ? trimmed.substring(0, 50) + '…' : trimmed}</span>`;
         }
+
+        /** 审核编辑弹窗：聊天截图本地上传（与 spring multipart 20MB 一致） */
+        const CHAT_SCREENSHOT_MAX_BYTES = 20 * 1024 * 1024;
+
+        function parseY3ImageUrlsForEdit(y3ImageInfo) {
+            if (!y3ImageInfo || !String(y3ImageInfo).trim()) return [];
+            const trimmed = String(y3ImageInfo).trim();
+            try {
+                const urls = JSON.parse(trimmed);
+                if (Array.isArray(urls)) {
+                    return urls.filter(u => typeof u === 'string' && u.trim()).map(u => u.trim());
+                }
+            } catch (e) { /* 非 JSON，按单条 */ }
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
+                return [trimmed];
+            }
+            return [];
+        }
+
+        function serializeY3UrlsForEdit(urls) {
+            if (!urls || urls.length === 0) return '';
+            if (urls.length === 1) return urls[0];
+            return JSON.stringify(urls);
+        }
+
+        function renderEditY3ImagePreview() {
+            const hidden = document.getElementById('editY3ImageInfo');
+            const container = document.getElementById('editY3ImagePreview');
+            if (!hidden || !container) return;
+            const urls = parseY3ImageUrlsForEdit(hidden.value);
+            if (urls.length === 0) {
+                container.innerHTML = '<span class="text-muted small">暂无截图，可点击「选择图片上传」</span>';
+                return;
+            }
+            let html = '';
+            urls.forEach((url, idx) => {
+                const escapedUrl = escapeHtml(url);
+                html += `<div class="d-inline-block text-center me-2 mb-2 align-top">
+                    <img src="${escapedUrl}" alt="" style="max-width: 96px; max-height: 96px; border-radius: 4px; cursor: pointer; border: 1px solid #dee2e6; display: block;"
+                         onclick="showY3ImageModal('${escapedUrl}')" title="点击查看大图">
+                    <button type="button" class="btn btn-link btn-sm text-danger p-0" onclick="removeEditY3ScreenshotAt(${idx})">移除</button>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function triggerEditY3ScreenshotUpload() {
+            const inp = document.getElementById('editY3ImageFileInput');
+            if (inp) inp.click();
+        }
+
+        function clearEditY3Screenshots() {
+            const hidden = document.getElementById('editY3ImageInfo');
+            if (hidden) hidden.value = '';
+            const inp = document.getElementById('editY3ImageFileInput');
+            if (inp) inp.value = '';
+            renderEditY3ImagePreview();
+        }
+
+        function removeEditY3ScreenshotAt(index) {
+            const hidden = document.getElementById('editY3ImageInfo');
+            if (!hidden) return;
+            const urls = parseY3ImageUrlsForEdit(hidden.value);
+            if (index < 0 || index >= urls.length) return;
+            urls.splice(index, 1);
+            hidden.value = serializeY3UrlsForEdit(urls);
+            renderEditY3ImagePreview();
+        }
+
+        async function onEditY3ScreenshotFilesSelected(ev) {
+            const input = ev.target;
+            const files = input && input.files ? Array.from(input.files) : [];
+            if (files.length === 0) return;
+            const btn = document.getElementById('editY3UploadBtn');
+            const orig = btn ? btn.textContent : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '上传中…';
+            }
+            try {
+                for (const file of files) {
+                    if (!file.type || !file.type.startsWith('image/')) {
+                        alert('已跳过非图片：' + (file.name || ''));
+                        continue;
+                    }
+                    if (file.size > CHAT_SCREENSHOT_MAX_BYTES) {
+                        alert('单张超过 20MB，已跳过：' + (file.name || ''));
+                        continue;
+                    }
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    const res = await fetch(`${BASE_URL}/mcp/order-audit-upload-screenshot`, {
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'same-origin'
+                    });
+                    const json = await res.json();
+                    if (!json || json.code !== 0 || !json.data || !json.data.url) {
+                        throw new Error((json && json.msg) || '上传失败');
+                    }
+                    const hidden = document.getElementById('editY3ImageInfo');
+                    const prev = parseY3ImageUrlsForEdit(hidden.value);
+                    prev.push(json.data.url);
+                    hidden.value = serializeY3UrlsForEdit(prev);
+                    renderEditY3ImagePreview();
+                }
+            } catch (e) {
+                alert(e.message || String(e));
+            } finally {
+                if (input) input.value = '';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = orig || '选择图片上传';
+                }
+            }
+        }
+
         function applyOrderTriggerVisibility() {
             const isIdcard = currentOrderTriggerType === 'idcard';
             const statusSel = document.getElementById('filterStatus');
@@ -1956,9 +2079,9 @@
             document.getElementById('editOrderRemark').value = order.order_remark || '';
             const y3ImageInfo = order.y3_image_info || '';
             document.getElementById('editY3ImageInfo').value = y3ImageInfo;
-            
-            // 渲染聊天图片预览
-            renderY3ImagePreview('editY3ImagePreview', y3ImageInfo);
+            const y3FileInp = document.getElementById('editY3ImageFileInput');
+            if (y3FileInp) y3FileInp.value = '';
+            renderEditY3ImagePreview();
 
             // 渲染药品列表
             renderDrugList(drugs);
@@ -2228,6 +2351,15 @@
             return (el.getAttribute(attr) || '').trim();
         }
 
+        /** 音频 URL 加时间戳，避免浏览器/反向代理按 URL 强缓存导致替换 mp3 后仍播旧声 */
+        function mcpOrderAuditSoundUrlCacheBust(url) {
+            if (!url || typeof url !== 'string') return '';
+            const u = url.trim();
+            if (!u || u.startsWith('data:')) return u;
+            const sep = u.indexOf('?') >= 0 ? '&' : '?';
+            return u + sep + 'mcp_snd=' + Date.now();
+        }
+
         function mcpOrderAuditEnsureAudioContext() {
             try {
                 const AC = window.AudioContext || window.webkitAudioContext;
@@ -2308,7 +2440,7 @@
                     playMcpOrderNotifySoundBuiltin(kind);
                 };
                 try {
-                    const a = new Audio(url);
+                    const a = new Audio(mcpOrderAuditSoundUrlCacheBust(url));
                     a.addEventListener('error', function () {
                         const code = a.error ? a.error.code : '';
                         fallbackBuiltin('audio error code=' + code + '（常见：404 路径错、文件未打进包、跨域）');
@@ -2336,7 +2468,7 @@
                     playMcpShipmentNotifySoundBuiltin(kind);
                 };
                 try {
-                    const a = new Audio(url);
+                    const a = new Audio(mcpOrderAuditSoundUrlCacheBust(url));
                     a.addEventListener('error', function () {
                         const code = a.error ? a.error.code : '';
                         fallbackBuiltin('audio error code=' + code + '（常见：404 路径错、文件未打进包、跨域）');

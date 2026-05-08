@@ -9,11 +9,11 @@ server:
 spring:
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: 20MB
+      max-request-size: 25MB
   # 本地报表库数据源（系统自身使用）
   datasource:
-    jdbc-url: jdbc:mysql://${MYSQL-HOST:localhost}:${MYSQL-PORT:3306}/jimureport?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
+    jdbc-url: jdbc:mysql://${MYSQL-HOST:139.155.91.119}:${MYSQL-PORT:3306}/jimureport?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
 #    username: ${MYSQL-USER:root}
 #    password: ${MYSQL-PASSWORD:123456}
     username: ${MYSQL-USER:jimureport}
@@ -188,7 +188,8 @@ mcp:
     access-token-ttl-seconds: ${MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS:-1}
     # 固定 Bearer，调用方直接使用：Authorization: Bearer <值>（可不调用 core_oauth_token）
     static-access-token: ${MCP_OAUTH_STATIC_TOKEN:mcp-yifeng-fixed-bearer-7Kp9mN2xQ4vL8wR3sT6jH1gF5dC0bA}
-  # 订单审核页提示音：填写音频 URL（相对站点根路径如 /sounds/mcp/new.mp3，或 https 绝对地址）；留空则用内置蜂鸣
+  # 订单审核页提示音：填写音频 URL（相对站点根路径如 /sounds/mcp/new.mp3，或 https 绝对地址）；留空则用内置蜂鸣。
+  # 页面播放时会自动追加 ?mcp_snd=时间戳，避免替换同名 mp3 后浏览器仍播缓存旧文件。
   order-audit:
     sound-new-url: ${MCP_ORDER_AUDIT_SOUND_NEW:/sounds/mcp-order-audit/2026040611343499593409.mp3}
     sound-merged-url: ${MCP_ORDER_AUDIT_SOUND_MERGED:/sounds/mcp-order-audit/2026040611373197091061.mp3}

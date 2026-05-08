@@ -7,6 +7,8 @@ import com.jeecg.modules.jmreport.service.McpOauthTokenService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,12 +19,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * MCP 核心查询接口 Controller
@@ -47,6 +56,12 @@ public class McpCoreQueryController {
     private McpOauthProperties oauthProperties;
     @Autowired
     private McpOauthTokenService mcpOauthTokenService;
+
+    @Value("${jeecg.path.upload:/opt/upload}")
+    private String jeecgUploadRoot;
+
+    /** 与 spring.servlet.multipart.max-file-size 对齐（略小于配置即可），用于返回明确错误 */
+    private static final long ORDER_AUDIT_SCREENSHOT_MAX_BYTES = 20L * 1024 * 1024;
 
     /**
      * 订单查询：core_order_query
@@ -347,6 +362,72 @@ public class McpCoreQueryController {
     }
 
     /**
+     * 审核页「聊天截图」本地上传：保存到 jeecg.path.upload/mcp-chat-screenshot，返回可访问 URL（同域 /mcp/uploaded/screenshots/…）。
+     */
+    @PostMapping(value = "/order-audit-upload-screenshot", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Map<String, Object> uploadOrderAuditScreenshot(@RequestPart("file") MultipartFile file) {
+        Map<String, Object> err = new LinkedHashMap<>();
+        if (file == null || file.isEmpty()) {
+            err.put("code", 400);
+            err.put("msg", "请选择图片文件");
+            err.put("data", null);
+            return err;
+        }
+        if (file.getSize() > ORDER_AUDIT_SCREENSHOT_MAX_BYTES) {
+            err.put("code", 400);
+            err.put("msg", "单张图片不能超过 20MB");
+            err.put("data", null);
+            return err;
+        }
+        String ct = file.getContentType() != null ? file.getContentType().toLowerCase(Locale.ROOT) : "";
+        String ext = extFromImageContentType(ct);
+        if (ext == null) {
+            err.put("code", 400);
+            err.put("msg", "仅支持 JPG、PNG、GIF、WebP 图片");
+            err.put("data", null);
+            return err;
+        }
+        String safeName = UUID.randomUUID().toString().replace("-", "") + ext;
+        try {
+            Path dir = Paths.get(jeecgUploadRoot, "mcp-chat-screenshot").toAbsolutePath().normalize();
+            Files.createDirectories(dir);
+            Path target = dir.resolve(safeName);
+            file.transferTo(target.toFile());
+            String urlPath = "/mcp/uploaded/screenshots/" + safeName;
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("url", urlPath);
+            Map<String, Object> ok = new LinkedHashMap<>();
+            ok.put("code", 0);
+            ok.put("msg", "ok");
+            ok.put("data", data);
+            log.info("MCP order-audit-upload-screenshot 成功，size={}, name={}", file.getSize(), safeName);
+            return ok;
+        } catch (Exception e) {
+            log.warn("MCP order-audit-upload-screenshot 失败", e);
+            err.put("code", 500);
+            err.put("msg", "保存文件失败：" + e.getMessage());
+            err.put("data", null);
+            return err;
+        }
+    }
+
+    private static String extFromImageContentType(String contentType) {
+        if (contentType.startsWith("image/png")) {
+            return ".png";
+        }
+        if (contentType.startsWith("image/gif")) {
+            return ".gif";
+        }
+        if (contentType.startsWith("image/webp")) {
+            return ".webp";
+        }
+        if (contentType.startsWith("image/jpeg") || contentType.startsWith("image/jpg")) {
+            return ".jpg";
+        }
+        return null;
+    }
+
+    /**
      * 发货登记：客户推送姓名、地址、电话、邮寄方式（必填），与海典库 mcp_shipment_request_log 落库逻辑同下单接口风格。
      */
     @PostMapping("/core_shipment_create")
@@ -513,7 +594,7 @@ public class McpCoreQueryController {
         /** 药品明细，可选；兼容数组或字符串 "[]"（上游部分通道会把 JSON 数组转成字符串） */
         private Object items;
         /** 聊天截图（图片URL或base64，支持单个URL或JSON数组格式） */
-        @JsonAlias({"y3_image_info", "y3PicUrl"})
+        @JsonAlias({"y3_image_info", "y3PicUrl", "chat_screenshot", "chatScreenshot"})
         private String y3ImageInfo;
     }
 

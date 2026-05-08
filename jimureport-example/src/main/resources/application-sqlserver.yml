@@ -9,8 +9,8 @@ server:
 spring:
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: 20MB
+      max-request-size: 25MB
   #配置静态资源
   mvc:
     static-path-pattern: /**

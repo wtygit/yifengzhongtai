@@ -1149,7 +1149,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 blankToNull(str(raw.get("y3PicUrl"))),
                 blankToNull(getIgnoreCase(raw, "y3_pic_url")),
                 blankToNull(str(raw.get("y3ImageUrl"))),
-                blankToNull(getIgnoreCase(raw, "y3_image_url")));
+                blankToNull(getIgnoreCase(raw, "y3_image_url")),
+                blankToNull(str(raw.get("chatScreenshot"))),
+                blankToNull(getIgnoreCase(raw, "chat_screenshot")));
         if (StringUtils.hasText(direct)) {
             return direct.trim();
         }
@@ -1165,7 +1167,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             String nested = firstNonBlank(
                     blankToNull(str(chat.get("y3ImageInfo"))),
                     blankToNull(str(chat.get("y3PicUrl"))),
-                    blankToNull(str(chat.get("y3ImageUrl"))));
+                    blankToNull(str(chat.get("y3ImageUrl"))),
+                    blankToNull(str(chat.get("chatScreenshot"))),
+                    blankToNull(getIgnoreCase(chat, "chat_screenshot")));
             if (StringUtils.hasText(nested)) {
                 return nested.trim();
             }

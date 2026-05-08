@@ -25,7 +25,7 @@ public class McpJsonRpcController {
     private static final String PROTOCOL_VERSION = "2024-11-05";
     private static final String SERVER_NAME = "haidian-mcp";
     // MCP 对外版本：工具定义/返回结构变化时请递增，便于客户判断是否需要刷新 tools/list
-    private static final String SERVER_VERSION = "1.7";
+    private static final String SERVER_VERSION = "1.8";
 
     @Autowired
     private McpCoreQueryService mcpCoreQueryService;
@@ -146,13 +146,19 @@ public class McpJsonRpcController {
                     }
                     boolean structOrder = arguments.containsKey("chatInfo")
                             || arguments.containsKey("items")
+                            || arguments.containsKey("y3ImageInfo")
+                            || arguments.containsKey("y3_image_info")
+                            || arguments.containsKey("deliveryHospital")
+                            || arguments.containsKey("delivery_hospital")
                             || hasOrderCreateText(arguments, "patientName", "patient_name", "patientPhone", "patient_phone",
                             "mobile", "phone",
                             "patientIdCard", "patient_id_card", "idCard", "id_card",
                             "patientEducation", "patient_education",
                             "groupName", "group_name", "orderRemark", "order_remark",
                             "userGroupNickname", "user_group_nickname", "groupNickname", "group_nickname",
-                            "requestJson", "request_json");
+                            "requestJson", "request_json",
+                            "y3ImageInfo", "y3_image_info", "chat_screenshot", "chatScreenshot",
+                            "deliveryHospital", "delivery_hospital");
                     if (structOrder) {
                         bizResult = mcpCoreQueryService.createOrder(arguments);
                     } else {
@@ -233,6 +239,7 @@ public class McpJsonRpcController {
         chatInfoProps.put("senderName", Map.of("type", "string", "description", "用户在群昵称（可选）"));
         chatInfoProps.put("remark", Map.of("type", "string", "description", "下单备注（可选）"));
         chatInfoProps.put("roomName", Map.of("type", "string", "description", "群名称（可选，与群配置 group_name 一致时可分词检索）"));
+        chatInfoProps.put("y3ImageInfo", Map.of("type", "string", "description", "聊天截图（可选）：URL / base64 / JSON；与顶层 y3ImageInfo 二选一即可"));
 
         Map<String, Object> itemProps = drugLineItemSchemaProperties();
 
@@ -254,6 +261,8 @@ public class McpJsonRpcController {
         schemaProps.put("patientName", Map.of("type", "string", "description", "患者姓名（可选）"));
         schemaProps.put("patientIdCard", Map.of("type", "string", "description", "患者身份证号（可选）"));
         schemaProps.put("patientEducation", Map.of("type", "string", "description", "用药教育/嘱托（可选）"));
+        schemaProps.put("y3ImageInfo", Map.of("type", "string", "description", "聊天截图（可选）：图片 URL、base64、或 JSON 数组；兼容同义字段 y3_image_info、y3PicUrl、chat_screenshot。也可放在 chatInfo.y3ImageInfo"));
+        schemaProps.put("deliveryHospital", Map.of("type", "string", "description", "送货医院名称（可选）；同义 delivery_hospital、hospitalName"));
         schemaProps.put("items", itemsSchema);
 
         Map<String, Object> schema = new LinkedHashMap<>();
@@ -261,7 +270,7 @@ public class McpJsonRpcController {
         schema.put("properties", schemaProps);
         return Map.of(
                 "name", "core_order_create",
-                "description", "下单：chatInfo 传群上下文（可选）；patientPhone/patientName 等可选；items 支持多药品。勿顶层传 groupName/orderRemark（请放 chatInfo）。成功返回 data 含 pendingId；重复提交可能 merged=true。",
+                "description", "下单：chatInfo 传群上下文（可选）；patientPhone/patientName、聊天截图 y3ImageInfo、送货医院 deliveryHospital、items 等可选。群名/备注/昵称须放在 chatInfo（勿顶层传 groupName/orderRemark）。成功返回 data.pendingId；短时重复提交可能 merged=true。",
                 "inputSchema", schema
         );
     }

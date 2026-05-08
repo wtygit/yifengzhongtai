@@ -4,7 +4,7 @@
 # 环境：将 @BASE 改为实际服务地址，本地测试可用 http://localhost:8085
 ###############################################################################
 
-@BASE = https://yfzt.antissoft.com
+@BASE = http://localhost:8085
 @ACCESS_TOKEN = mcp-yifeng-fixed-bearer-7Kp9mN2xQ4vL8wR3sT6jH1gF5dC0bA
 
 ###############################################################################
@@ -117,7 +117,7 @@ Authorization: Bearer {{ACCESS_TOKEN}}
     "remark": "测试音频文件",
     "roomName": "一丰二医院患者支援群旗舰店"
   },
-  "patientPhone": "13881748461",
+  "patientPhone": "13881748491",
   "patientIdCard": "510111197209161293",
   "items": "[]"
 }
@@ -149,6 +149,26 @@ Authorization: Bearer {{ACCESS_TOKEN}}
       "spec": "3g*10袋"
     }
   ]
+}
+
+### 〇-2C 下单（REST，带聊天截图 y3ImageInfo — 公网图片 URL 测试）
+# 验证点：y3ImageInfo 落库 / 中台；兼容 chat_screenshot、chatInfo.y3ImageInfo 等同义见代码与 tools/list
+# 图片仅为联调用例 URL；若外网不可达，可换成你们 CDN 上可访问的地址
+POST {{BASE}}/mcp/core_order_create
+Content-Type: application/json
+Authorization: Bearer {{ACCESS_TOKEN}}
+
+{
+  "chatInfo": {
+    "senderName": "截图联调-群昵称",
+    "remark": "带聊天截图下单测试",
+    "roomName": "一丰恒瑞患者服务群-成都旗舰店"
+  },
+  "patientName": "截图联调患者",
+  "patientPhone": "13800138200",
+  "patientIdCard": "510105199303033333",
+  "y3ImageInfo": "https://img2.baidu.com/it/u=2150035813,1326849784&fm=253&fmt=auto&app=120&f=JPEG?w=500&h=742",
+  "items": []
 }
 
 ### 〇-3 按分词查询待审核订单（仅 audit_status=0，等价 tools/call：core_order_query_by_group_token）
