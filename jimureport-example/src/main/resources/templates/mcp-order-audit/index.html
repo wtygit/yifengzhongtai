@@ -378,6 +378,18 @@
                             <label for="editPatientIdCard" class="form-label">身份证</label>
                             <input type="text" class="form-control" id="editPatientIdCard" name="patientIdCard">
                         </div>
+                        <div class="mb-3 trigger-phone-only">
+                            <label for="editGroupName" class="form-label">群名称</label>
+                            <input type="text" class="form-control" id="editGroupName" placeholder="与群配置 group_name 一致时可按分词检索">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editStoreId" class="form-label">门店号</label>
+                            <input type="text" class="form-control" id="editStoreId" placeholder="多个用英文逗号分隔；与中台 storeId 一致">
+                        </div>
+                        <div class="mb-3">
+                            <label for="editPatientEducation" class="form-label">患教 / 用药说明</label>
+                            <input type="text" class="form-control" id="editPatientEducation" placeholder="可选，同步中台患教展示">
+                        </div>
                         <div class="mb-3">
                             <label for="editUserGroupNickname" class="form-label">群昵称</label>
                             <input type="text" class="form-control" id="editUserGroupNickname" placeholder="以昵称为准同步到小程序/中台患教展示">
@@ -1993,6 +2005,9 @@
                 patientIdCard: patientIdCard.trim() || orderData.order.patient_id_card,
                 requestTriggerType: orderData.order.request_trigger_type || currentOrderTriggerType,
                 groupName: (currentOrderTriggerType === 'idcard') ? '' : (orderData.order.group_name || ''),
+                storeId: (orderData.order.store_ids != null && String(orderData.order.store_ids).trim())
+                    ? String(orderData.order.store_ids).trim() : '',
+                patientEducation: orderData.order.patient_education || '',
                 orderRemark: orderData.order.order_remark || '',
                 userGroupNickname: orderData.order.user_group_nickname || '',
                 deliveryHospital: orderData.order.delivery_hospital || '',
@@ -2074,6 +2089,12 @@
             document.getElementById('editPatientName').value = order.patient_name || '';
             document.getElementById('editPatientPhone').value = order.patient_phone || '';
             document.getElementById('editPatientIdCard').value = order.patient_id_card || '';
+            const eg = document.getElementById('editGroupName');
+            if (eg) eg.value = order.group_name || '';
+            const es = document.getElementById('editStoreId');
+            if (es) es.value = (order.store_ids != null && String(order.store_ids).trim()) ? String(order.store_ids).trim() : '';
+            const epe = document.getElementById('editPatientEducation');
+            if (epe) epe.value = order.patient_education || '';
             document.getElementById('editUserGroupNickname').value = order.user_group_nickname || '';
             document.getElementById('editDeliveryHospital').value = order.delivery_hospital || '';
             document.getElementById('editOrderRemark').value = order.order_remark || '';
@@ -2218,6 +2239,9 @@
             const patientName = document.getElementById('editPatientName').value.trim();
             const patientPhone = document.getElementById('editPatientPhone').value.trim();
             const patientIdCard = document.getElementById('editPatientIdCard').value.trim();
+            const groupNameEdit = ((document.getElementById('editGroupName') || {}).value || '').trim();
+            const storeIdEdit = ((document.getElementById('editStoreId') || {}).value || '').trim();
+            const patientEducationEdit = ((document.getElementById('editPatientEducation') || {}).value || '').trim();
             const userGroupNickname = (document.getElementById('editUserGroupNickname').value || '').trim();
             const deliveryHospital = (document.getElementById('editDeliveryHospital').value || '').trim();
             const orderRemark = (document.getElementById('editOrderRemark').value || '').trim();
@@ -2265,7 +2289,9 @@
                 patientPhone: patientPhone,
                 patientIdCard: patientIdCard,
                 requestTriggerType: od && od.order ? (od.order.request_trigger_type || currentOrderTriggerType) : currentOrderTriggerType,
-                groupName: (currentOrderTriggerType === 'idcard') ? '' : (od && od.order ? (od.order.group_name || '') : ''),
+                groupName: (currentOrderTriggerType === 'idcard') ? '' : groupNameEdit,
+                storeId: storeIdEdit,
+                patientEducation: patientEducationEdit,
                 orderRemark: orderRemark,
                 userGroupNickname: userGroupNickname,
                 deliveryHospital: deliveryHospital,

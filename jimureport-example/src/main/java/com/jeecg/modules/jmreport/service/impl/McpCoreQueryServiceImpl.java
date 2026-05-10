@@ -1460,6 +1460,37 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
     }
 
     /**
+     * 审核页「保存/下单」常只带患者等少量字段；归一化后为空的项从库内原单补回，避免门店号、药品、截图等被整段覆盖丢失。
+     */
+    private void mergePartialOrderUpdateFromExisting(Map<String, Object> normalized, Map<String, Object> existingNorm) {
+        if (normalized == null || existingNorm == null) {
+            return;
+        }
+        if (!StringUtils.hasText(str(normalized.get("groupName")))) {
+            normalized.put("groupName", str(existingNorm.get("groupName")));
+        }
+        if (!StringUtils.hasText(str(normalized.get("storeId")))) {
+            normalized.put("storeId", str(existingNorm.get("storeId")));
+        }
+        if (!StringUtils.hasText(str(normalized.get("patientEducation")))) {
+            normalized.put("patientEducation", str(existingNorm.get("patientEducation")));
+        }
+        if (!StringUtils.hasText(str(normalized.get("deliveryHospital")))) {
+            normalized.put("deliveryHospital", str(existingNorm.get("deliveryHospital")));
+        }
+        if (!StringUtils.hasText(str(normalized.get("orderRemark")))) {
+            normalized.put("orderRemark", str(existingNorm.get("orderRemark")));
+        }
+        if (!StringUtils.hasText(str(normalized.get("userGroupNickname")))) {
+            normalized.put("userGroupNickname", str(existingNorm.get("userGroupNickname")));
+        }
+        if (!StringUtils.hasText(str(normalized.get("y3ImageInfo")))) {
+            normalized.put("y3ImageInfo", str(existingNorm.get("y3ImageInfo")));
+        }
+        // 不在此合并 items：空数组可能表示用户有意清空药品，合并会误恢复旧明细
+    }
+
+    /**
      * 将已序列化 JSON 写入表A（任意 audit_status，用于原始接入留痕等）。
      */
     private int insertMcpOrderRequestLogWithJson(String pendingId, String orderId, String requestSource,
@@ -3319,19 +3350,17 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             }
             // 移除门店权限校验，允许所有门店编辑订单
             Map<String, Object> normalized = prepareNormalizedOrderPayload(userRequestData);
-            // 防止前端篡改群归属，群相关字段以原订单为准
             if (existingNorm != null) {
-                normalized.put("groupName", str(existingNorm.get("groupName")));
-                // 允许审核页修改备注、群昵称、送货医院、Y3 图等；群名仍以原订单为准
+                // 审核页可能只提交部分字段（列表行「下单」、旧版保存等），空白项须从库内已归一化数据回填，避免门店号、患教、药品等被清空
+                mergePartialOrderUpdateFromExisting(normalized, existingNorm);
                 // requestTriggerType 不再强制沿用旧值：
                 // 身份证 Tab 下单前会显式传 idcard，这里必须允许覆盖旧历史值（如 phone），
                 // 否则 approveOrder 无法进入“身份证本地完成”分支。
                 if (!StringUtils.hasText(str(normalized.get("requestTriggerType")))) {
                     normalized.put("requestTriggerType", str(existingNorm.get("requestTriggerType")));
                 }
-                Object gt = existingNorm.get("groupTokens");
-                if (gt != null) {
-                    normalized.put("groupTokens", gt);
+                if (groupNameTokenService != null) {
+                    groupNameTokenService.attachGroupTokens(normalized);
                 }
             }
             syncOcrProfileFromAuditPatientEdit(pendingId, normalized);
