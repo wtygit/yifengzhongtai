@@ -632,7 +632,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     Map<String, Object> data = new LinkedHashMap<>();
                     data.put("pendingId", hitPendingId);
                     data.put("merged", true);
-                    data.put("message", "检测到短时间内同手机号重复提交，已更新最近一条待审核订单");
+                    data.put("message", "检测到短时间内同手机号重复提交且药品信息一致，已更新最近一条待审核订单");
                     Map<String, Object> p = new LinkedHashMap<>();
                     p.put("patientName", normalizedRequest.get("patientName"));
                     p.put("patientPhone", normalizedRequest.get("patientPhone"));
@@ -767,7 +767,83 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
     }
 
     /**
+     * 从归一化请求中取 items（仅含已带 drugName 的行，与列表展示一致）。
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> extractNormalizedDrugItemsFromNorm(Map<String, Object> norm) {
+        if (norm == null) {
+            return List.of();
+        }
+        Object o = norm.get("items");
+        if (!(o instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object el : list) {
+            if (el instanceof Map<?, ?> raw) {
+                Object dn = raw.get("drugName");
+                if (!StringUtils.hasText(str(dn))) {
+                    continue;
+                }
+                out.add((Map<String, Object>) raw);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 单行药品签名：药名、规格、数量、商品ID、条码均参与比较（与 {@link #normalizeItemsList} 产出字段一致）。
+     */
+    private static String shortMergeItemLineSignature(Map<String, Object> it) {
+        String drug = str(it.get("drugName")).trim();
+        String spec = str(it.get("spec")).trim();
+        Object qv = it.get("qty");
+        int qty = 1;
+        if (qv instanceof Number) {
+            qty = ((Number) qv).intValue();
+        } else if (qv != null) {
+            try {
+                qty = Integer.parseInt(String.valueOf(qv).trim());
+            } catch (Exception ignored) {
+                qty = 1;
+            }
+        }
+        if (qty <= 0) {
+            qty = 1;
+        }
+        String wid = str(it.get("wareId")).trim();
+        String bc = str(it.get("barCode")).trim();
+        return drug + "\u0001" + spec + "\u0001" + qty + "\u0001" + wid + "\u0001" + bc;
+    }
+
+    /**
+     * 短时合并用：两侧药品「是否相同」按归一化 items 的多重集合比较（顺序无关；均无药品视为相同，可合并更新备注等）。
+     */
+    private static boolean areOrderItemsEqualForShortMerge(Map<String, Object> oldNorm, Map<String, Object> newNorm) {
+        List<Map<String, Object>> a = extractNormalizedDrugItemsFromNorm(oldNorm);
+        List<Map<String, Object>> b = extractNormalizedDrugItemsFromNorm(newNorm);
+        if (a.size() != b.size()) {
+            return false;
+        }
+        if (a.isEmpty()) {
+            return true;
+        }
+        List<String> sa = new ArrayList<>();
+        for (Map<String, Object> it : a) {
+            sa.add(shortMergeItemLineSignature(it));
+        }
+        List<String> sb = new ArrayList<>();
+        for (Map<String, Object> it : b) {
+            sb.add(shortMergeItemLineSignature(it));
+        }
+        sa.sort(String::compareTo);
+        sb.sort(String::compareTo);
+        return sa.equals(sb);
+    }
+
+    /**
      * 查找短时内可合并的待审核单：逻辑仅依赖 user_request_data 中的患者手机号（规范化后）及姓名/身份证互斥，不使用微信标识。
+     * 若时间窗口内最近一条同患者待审单的药品明细与本次不一致，则不合并（返回 null，走新建），避免不同药品覆盖同一单。
      */
     private String findRecentPendingIdForShortDuplicateMerge(Map<String, Object> normalizedNew, int windowMinutes) {
         if (haidianJdbcTemplate == null || normalizedNew == null || windowMinutes <= 0) {
@@ -800,7 +876,10 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     Map<String, Object> oldReq = objectMapper.readValue(reqJson, Map.class);
                     Map<String, Object> oldNorm = normalizeUserRequestDataMap(oldReq);
                     if (shouldMergeShortDuplicatePatient(oldNorm, normalizedNew)) {
-                        return pendingId;
+                        if (areOrderItemsEqualForShortMerge(oldNorm, normalizedNew)) {
+                            return pendingId;
+                        }
+                        return null;
                     }
                 } catch (Exception ignored) {
                 }
@@ -1395,6 +1474,11 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         if (chatInfoObj instanceof Map) {
             out.put("chatInfo", chatInfoObj);
         }
+        if (Boolean.TRUE.equals(raw.get("_manualAuditCreate"))
+                || "true".equalsIgnoreCase(str(raw.get("_manualAuditCreate")))
+                || "mcp_order_audit_manual".equalsIgnoreCase(str(raw.get("orderCreateSource")))) {
+            out.put("_manualAuditCreate", Boolean.TRUE);
+        }
         return out;
     }
 
@@ -1486,6 +1570,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         }
         if (!StringUtils.hasText(str(normalized.get("y3ImageInfo")))) {
             normalized.put("y3ImageInfo", str(existingNorm.get("y3ImageInfo")));
+        }
+        if (!Boolean.TRUE.equals(normalized.get("_manualAuditCreate")) && Boolean.TRUE.equals(existingNorm.get("_manualAuditCreate"))) {
+            normalized.put("_manualAuditCreate", Boolean.TRUE);
         }
         // 不在此合并 items：空数组可能表示用户有意清空药品，合并会误恢复旧明细
     }
@@ -2461,6 +2548,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     String reqY3ImageInfo = requestData.get("y3ImageInfo") == null ? "" : String.valueOf(requestData.get("y3ImageInfo"));
                     String reqStoreIds = StringUtils.hasText(reqStoreId) ? reqStoreId : storeIdsCsvFromGroupNameSuffix(reqGroupNameRaw);
                     String reqTriggerType = requestData.get("requestTriggerType") == null ? "" : String.valueOf(requestData.get("requestTriggerType"));
+                    boolean manualAuditCreate = Boolean.TRUE.equals(requestData.get("_manualAuditCreate"));
 
                     // 提取 items：有药品则一行一药；无药品也至少返回一行便于展示患者信息
                     Object itemsObj = requestData.get("items");
@@ -2489,6 +2577,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                             orderItem.put("delivery_hospital", reqDeliveryHospital);
                             orderItem.put("y3_image_info", reqY3ImageInfo);
                             orderItem.put("group_tokens", requestData.get("groupTokens"));
+                            orderItem.put("manual_audit_create", manualAuditCreate);
                             orderItem.put("drug_name", item.get("drugName"));
                             orderItem.put("spec", item.get("spec"));
                             orderItem.put("qty", item.get("qty"));
@@ -2518,6 +2607,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         orderItem.put("delivery_hospital", reqDeliveryHospital);
                         orderItem.put("y3_image_info", reqY3ImageInfo);
                         orderItem.put("group_tokens", requestData.get("groupTokens"));
+                        orderItem.put("manual_audit_create", manualAuditCreate);
                         orderList.add(orderItem);
                     }
                     if (tokenQ != null && orderList.size() >= 100) {

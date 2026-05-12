@@ -232,7 +232,7 @@ public class McpJsonRpcController {
     }
 
     /**
-     * 下单工具：群信息走 chatInfo；items 与下单接口一致，支持多药品；短时间同手机号重复提交由服务端合并更新（见返回 merged）。
+     * 下单工具：群信息走 chatInfo；items 与下单接口一致，支持多药品；短时间同手机号重复提交时，仅当药品明细与最近待审单一致才合并更新（见返回 merged）。
      */
     private Map<String, Object> orderCreateToolDef() {
         Map<String, Object> chatInfoProps = new LinkedHashMap<>();

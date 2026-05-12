@@ -98,6 +98,7 @@ Authorization: Bearer {{ACCESS_TOKEN}}
       "quantity": 1,
       "spec": "3g*10袋"
     }
+    
   ]
 }
 
@@ -119,7 +120,14 @@ Authorization: Bearer {{ACCESS_TOKEN}}
   },
   "patientPhone": "13881748491",
   "patientIdCard": "510111197209161293",
-  "items": "[]"
+  "items": [
+  {
+      "drugName": "阿莫西林胶囊",
+      "spec": "0.25g*24粒",
+      "qty": 2,
+      "barCode": "6931435340413"
+    }
+  ]
 }
 
 ### 〇-2B 下单（chatInfo + items 真数组，顺便测药品归一化）

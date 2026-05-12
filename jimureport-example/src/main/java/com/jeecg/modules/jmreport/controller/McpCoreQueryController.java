@@ -181,6 +181,8 @@ public class McpCoreQueryController {
                 || StringUtils.hasText(request.getOrderRemark())
                 || StringUtils.hasText(request.getUserGroupNickname())
                 || StringUtils.hasText(request.getY3ImageInfo())
+                || StringUtils.hasText(request.getDeliveryHospital())
+                || StringUtils.hasText(request.getOrderCreateSource())
                 || StringUtils.hasText(request.getRequestJson());
         if (structured) {
             java.util.Map<String, Object> map = new java.util.HashMap<>();
@@ -189,6 +191,12 @@ public class McpCoreQueryController {
             map.put("patientPhone", request.getPatientPhone());
             map.put("patientIdCard", request.getPatientIdCard());
             map.put("patientEducation", request.getPatientEducation());
+            if (StringUtils.hasText(request.getDeliveryHospital())) {
+                map.put("deliveryHospital", request.getDeliveryHospital());
+            }
+            if (StringUtils.hasText(request.getOrderCreateSource())) {
+                map.put("orderCreateSource", request.getOrderCreateSource());
+            }
             if (StringUtils.hasText(request.getGroupName())) {
                 map.put("groupName", request.getGroupName());
             }
@@ -596,6 +604,14 @@ public class McpCoreQueryController {
         /** 聊天截图（图片URL或base64，支持单个URL或JSON数组格式） */
         @JsonAlias({"y3_image_info", "y3PicUrl", "chat_screenshot", "chatScreenshot"})
         private String y3ImageInfo;
+        /** 送货医院（审核页手建等） */
+        @JsonAlias({"delivery_hospital"})
+        private String deliveryHospital;
+        /**
+         * 订单创建来源：如 mcp_order_audit_manual 表示审核页「手动新增」，用于列表展示手建标识
+         */
+        @JsonAlias({"order_create_source"})
+        private String orderCreateSource;
     }
 
     @Data

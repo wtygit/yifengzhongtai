@@ -568,7 +568,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-2">检测到短时间内同手机号重复提交，已更新最近待审核订单。</p>
+                    <p class="mb-2">检测到短时间内同手机号重复提交，且与最近一条待审核订单的药品明细一致，已合并更新该订单。</p>
                     <div id="mergedOrderNotifyList" class="small text-muted"></div>
                 </div>
                 <div class="modal-footer">
@@ -1433,7 +1433,8 @@
                 patientName: patientName.trim(),
                 patientPhone: patientPhone.trim(),
                 patientIdCard: patientIdCard.trim(),
-                items: items
+                items: items,
+                orderCreateSource: 'mcp_order_audit_manual'
             };
             if ((deliveryHospital || '').trim()) {
                 payload.deliveryHospital = (deliveryHospital || '').trim();
@@ -1706,10 +1707,13 @@
                             order_remark: order.order_remark || order.orderRemark || '',
                             user_group_nickname: order.user_group_nickname || order.userGroupNickname || '',
                             delivery_hospital: order.delivery_hospital || order.deliveryHospital || '',
-                            y3_image_info: order.y3_image_info || order.y3ImageInfo || ''
+                            y3_image_info: order.y3_image_info || order.y3ImageInfo || '',
+                            manual_audit_create: !!(order.manual_audit_create || order.manualAuditCreate)
                         },
                         drugs: []
                     });
+                } else if (order.manual_audit_create || order.manualAuditCreate) {
+                    orderMap.get(pendingId).order.manual_audit_create = true;
                 }
                 
                 const drugNameRaw = order.drug_name || order.drugName;
@@ -1748,6 +1752,9 @@
                 const y3ImageInfo = order.y3_image_info || '';
                 const y3Html = renderY3ImageInfo(y3ImageInfo);
                 const checked = selectedOrderPendingIds.has(pendingId) ? ' checked' : '';
+                const manualBadge = order.manual_audit_create
+                    ? '<span class="badge bg-secondary ms-1 align-middle" title="审核页「手动新增」创建">手建</span>'
+                    : '';
                 html += `
                     <tr data-pending-id="${pendingId}">
                         <td class="text-center align-middle">
@@ -1756,7 +1763,7 @@
                         <td>
                             <span class="pending-id-cell">
                                 ${showDot ? '<span class="new-order-dot" title="未查看药品信息"></span>' : ''}
-                                <span class="pending-id-text">${pendingId}</span>
+                                <span class="pending-id-text">${pendingId}</span>${manualBadge}
                             </span>
                         </td>
                         <td><span class="status-badge ${statusClass}">${statusText}</span></td>
