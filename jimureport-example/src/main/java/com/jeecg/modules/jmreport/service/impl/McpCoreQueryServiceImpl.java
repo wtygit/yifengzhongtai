@@ -43,6 +43,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
      */
     private static final int AUDIT_STATUS_RAW_INGEST = 8;
 
+    /** audit_status：4 已作废（审核页手动作废，不可再编辑/下单） */
+    private static final int AUDIT_STATUS_VOIDED = 4;
+
     /** 群分词下拉：仅扫冗余列时的最大行数（避免拉 longtext） */
     private static final int GROUP_TOKEN_OPTIONS_FAST_SCAN_LIMIT = 2500;
 
@@ -980,23 +983,19 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             remarkItems.add(ri);
         }
 
-        String remarkDrugJson = null;
-        try {
-            remarkDrugJson = objectMapper.writeValueAsString(remarkItems);
-        } catch (Exception ignored) {
-        }
-        if (StringUtils.hasText(remarkDrugJson)) {
-            String appended = "MCP药品原始信息=" + remarkDrugJson;
+        middleOrderRemark = stripLegacyDrugInfoLinesFromRemark(middleOrderRemark);
+        String drugNamesLine = buildDrugNamesRemarkLine(remarkItems);
+        if (StringUtils.hasText(drugNamesLine)) {
             if (StringUtils.hasText(middleOrderRemark)) {
-                middleOrderRemark = middleOrderRemark.trim();
-                if (!middleOrderRemark.isEmpty()) {
-                    middleOrderRemark = middleOrderRemark + "\n" + appended;
-                } else {
-                    middleOrderRemark = appended;
-                }
+                middleOrderRemark = middleOrderRemark.trim() + "\n" + drugNamesLine;
             } else {
-                middleOrderRemark = appended;
+                middleOrderRemark = drugNamesLine;
             }
+        }
+        String deliveryDate = request.get("deliveryDate") == null ? null : String.valueOf(request.get("deliveryDate")).trim();
+        if (StringUtils.hasText(deliveryDate)) {
+            String line = "送货日期：" + deliveryDate;
+            middleOrderRemark = StringUtils.hasText(middleOrderRemark) ? (middleOrderRemark.trim() + "\n" + line) : line;
         }
         if (StringUtils.hasText(deliveryHospital)) {
             String line = "送货医院：" + deliveryHospital.trim();
@@ -1319,6 +1318,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             out.put("userGroupNickname", "");
             out.put("deliveryHospital", "");
             out.put("y3ImageInfo", "");
+            out.put("orderBizType", "");
+            out.put("deliveryDate", "");
             out.put("items", new ArrayList<>());
             return out;
         }
@@ -1444,6 +1445,16 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         out.put("userGroupNickname", userGroupNickname != null ? userGroupNickname : "");
         out.put("deliveryHospital", deliveryHospital != null ? deliveryHospital : "");
         out.put("y3ImageInfo", y3ImageInfo != null ? y3ImageInfo : "");
+        String orderBizType = normalizeOrderBizTypeCode(firstNonBlank(
+                blankToNull(str(raw.get("orderBizType"))),
+                blankToNull(getIgnoreCase(raw, "order_biz_type")),
+                blankToNull(str(raw.get("bizType"))),
+                blankToNull(getIgnoreCase(raw, "biz_type"))));
+        out.put("orderBizType", orderBizType != null ? orderBizType : "");
+        String deliveryDate = firstNonBlank(
+                blankToNull(str(raw.get("deliveryDate"))),
+                blankToNull(getIgnoreCase(raw, "delivery_date")));
+        out.put("deliveryDate", deliveryDate != null ? deliveryDate : "");
 
         List<Map<String, Object>> items = normalizeItemsList(raw.get("items"));
         if (items.isEmpty() && parsed != null && parsed.items != null) {
@@ -1574,7 +1585,101 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         if (!Boolean.TRUE.equals(normalized.get("_manualAuditCreate")) && Boolean.TRUE.equals(existingNorm.get("_manualAuditCreate"))) {
             normalized.put("_manualAuditCreate", Boolean.TRUE);
         }
+        if (!StringUtils.hasText(str(normalized.get("orderBizType")))) {
+            normalized.put("orderBizType", str(existingNorm.get("orderBizType")));
+        }
+        if (!StringUtils.hasText(str(normalized.get("deliveryDate")))) {
+            normalized.put("deliveryDate", str(existingNorm.get("deliveryDate")));
+        }
         // 不在此合并 items：空数组可能表示用户有意清空药品，合并会误恢复旧明细
+    }
+
+    /** 业务状态码：1 预下单（卖品），2 寄存，3 赠药 */
+    private static String normalizeOrderBizTypeCode(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "";
+        }
+        String t = raw.trim();
+        if ("1".equals(t) || "预下单（卖品）".equals(t) || "预下单(卖品)".equals(t)) {
+            return "1";
+        }
+        if ("2".equals(t) || "寄存".equals(t)) {
+            return "2";
+        }
+        if ("3".equals(t) || "赠药".equals(t)) {
+            return "3";
+        }
+        return t;
+    }
+
+    static String formatOrderBizTypeLabel(String code) {
+        if (!StringUtils.hasText(code)) {
+            return "";
+        }
+        return switch (code.trim()) {
+            case "1" -> "预下单（卖品）";
+            case "2" -> "寄存";
+            case "3" -> "赠药";
+            default -> code.trim();
+        };
+    }
+
+    private static boolean matchesOrderBizTypeFilter(Map<String, Object> requestData, String orderBizTypeFilter) {
+        if (!StringUtils.hasText(orderBizTypeFilter)) {
+            return true;
+        }
+        String want = normalizeOrderBizTypeCode(orderBizTypeFilter);
+        if (!StringUtils.hasText(want)) {
+            return true;
+        }
+        if (requestData == null) {
+            return false;
+        }
+        String got = normalizeOrderBizTypeCode(str(requestData.get("orderBizType")));
+        return want.equals(got);
+    }
+
+    /** 小程序/中台备注：药品名称逗号拼接，避免 JSON 脏数据 */
+    private static String buildDrugNamesRemarkLine(List<Map<String, Object>> remarkItems) {
+        if (remarkItems == null || remarkItems.isEmpty()) {
+            return null;
+        }
+        List<String> names = new ArrayList<>();
+        for (Map<String, Object> ri : remarkItems) {
+            String dn = str(ri.get("drugName"));
+            if (StringUtils.hasText(dn)) {
+                names.add(dn.trim());
+            }
+        }
+        if (names.isEmpty()) {
+            return null;
+        }
+        return "药品原始信息：" + String.join("，", names);
+    }
+
+    /** 提交下单前去掉历史 MCP 药品 JSON 行，避免重复脏数据 */
+    private static String stripLegacyDrugInfoLinesFromRemark(String remark) {
+        if (!StringUtils.hasText(remark)) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String line : remark.split("\\r?\\n")) {
+            String t = line.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            if (t.startsWith("MCP药品原始信息=") || t.startsWith("MCP药品原始信息＝")) {
+                continue;
+            }
+            if (t.startsWith("药品原始信息：") || t.startsWith("药品原始信息:")) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(line);
+        }
+        return sb.toString().trim();
     }
 
     /**
@@ -2209,12 +2314,13 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         return "PD-" + java.time.LocalDate.now() + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
 
-    /** audit_status：0 待审核/待下单，1 已下单（走中台），2 已驳回，3 身份证私聊单本地已完成（未走中台） */
+    /** audit_status：0 待审核/待下单，1 已下单（走中台），2 已驳回，3 身份证私聊单本地已完成（未走中台），4 已作废 */
     private static String formatAuditStatusForMessage(int auditStatus) {
         return switch (auditStatus) {
             case 1 -> "已下单";
             case 2 -> "已驳回";
             case 3 -> "已完成";
+            case AUDIT_STATUS_VOIDED -> "已作废";
             default -> "状态码" + auditStatus;
         };
     }
@@ -2247,6 +2353,12 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             }
             Map<String, Object> row = rows.get(0);
             Integer auditStatus = row.get("audit_status") instanceof Number ? ((Number) row.get("audit_status")).intValue() : null;
+            if (auditStatus != null && auditStatus == AUDIT_STATUS_VOIDED) {
+                result.put("code", 400);
+                result.put("msg", "订单已作废，不能下单");
+                result.put("data", Map.of("pendingId", pendingId, "auditStatus", auditStatus));
+                return result;
+            }
             if (auditStatus != null && auditStatus != 0) {
                 result.put("code", 400);
                 result.put("msg", "订单已审核，不能重复审核（当前状态：" + formatAuditStatusForMessage(auditStatus) + "）");
@@ -2364,6 +2476,57 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         }
     }
 
+    @Override
+    public Map<String, Object> voidOrder(String pendingId, String auditRemark) {
+        Map<String, Object> result = new HashMap<>();
+        if (!StringUtils.hasText(pendingId)) {
+            result.put("code", 400);
+            result.put("msg", "pendingId 不能为空");
+            result.put("data", null);
+            return result;
+        }
+        if (haidianJdbcTemplate == null) {
+            result.put("code", 500);
+            result.put("msg", "海典同步库未初始化");
+            result.put("data", null);
+            return result;
+        }
+        try {
+            List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(
+                    "SELECT audit_status FROM mcp_order_create_request_log WHERE pending_id = ?",
+                    pendingId);
+            if (rows.isEmpty()) {
+                result.put("code", 404);
+                result.put("msg", "未找到对应订单");
+                result.put("data", null);
+                return result;
+            }
+            Integer auditStatus = rows.get(0).get("audit_status") instanceof Number
+                    ? ((Number) rows.get(0).get("audit_status")).intValue() : null;
+            if (auditStatus != null && auditStatus == AUDIT_STATUS_VOIDED) {
+                result.put("code", 400);
+                result.put("msg", "订单已是作废状态");
+                result.put("data", Map.of("pendingId", pendingId, "auditStatus", auditStatus));
+                return result;
+            }
+            String remark = StringUtils.hasText(auditRemark) ? auditRemark.trim() : "页面作废";
+            java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
+            int updated = haidianJdbcTemplate.update(
+                    "UPDATE mcp_order_create_request_log SET audit_status = ?, audit_time = ?, audit_remark = ? WHERE pending_id = ?",
+                    AUDIT_STATUS_VOIDED, now, remark, pendingId);
+            result.put("code", 0);
+            result.put("msg", updated > 0 ? "ok" : "更新失败");
+            result.put("data", Map.of("pendingId", pendingId, "auditStatus", AUDIT_STATUS_VOIDED, "updated", updated));
+            return result;
+        } catch (Exception e) {
+            log.error("订单作废失败，pendingId={}", pendingId, e);
+            result.put("code", 500);
+            result.put("msg", "作废失败：" + e.getMessage());
+            result.put("data", null);
+            return result;
+        }
+    }
+
     private static String sanitizeGroupTokenForSearch(String token) {
         if (!StringUtils.hasText(token)) {
             return null;
@@ -2423,7 +2586,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                                                  String storeId,
                                                  String createDateStart, String createDateEnd,
                                                  String createTimeStart, String createTimeEnd,
-                                                 String requestTriggerType) {
+                                                 String requestTriggerType, String orderBizType) {
         Map<String, Object> result = new HashMap<>();
         if (haidianJdbcTemplate == null) {
             result.put("code", 500);
@@ -2482,7 +2645,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
 
             // 全量统计：返回“筛选后总单数”，不受页面列表 LIMIT 影响
             int totalCountFull = computeOrderAuditTotalCountFull(status, tokenQ, pendingId, patientName, patientPhone, patientIdCard, groupName,
-                    storeId, createFrom, createTo, requestTriggerType);
+                    storeId, createFrom, createTo, requestTriggerType, orderBizType);
 
             // 列表查询：若存在姓名/手机号/身份证/群名称/分词等筛选，放大 SQL 取数窗口，
             // 避免“先 LIMIT 再内存过滤”导致“筛选结果有值但列表空白”。
@@ -2491,7 +2654,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     || StringUtils.hasText(patientPhone)
                     || StringUtils.hasText(patientIdCard)
                     || StringUtils.hasText(groupName)
-                    || StringUtils.hasText(storeId);
+                    || StringUtils.hasText(storeId)
+                    || StringUtils.hasText(orderBizType);
             sql += " ORDER BY create_time DESC LIMIT ?";
             params.add(hasDeepFilter ? 5000 : 100);
 
@@ -2533,6 +2697,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     if (!matchesStoreIdFilter(requestData, storeId)) {
                         continue;
                     }
+                    if (!matchesOrderBizTypeFilter(requestData, orderBizType)) {
+                        continue;
+                    }
 
                     // 提取患者信息
                     String patientNameValue = requestData.get("patientName") == null ? null : String.valueOf(requestData.get("patientName"));
@@ -2549,6 +2716,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     String reqStoreIds = StringUtils.hasText(reqStoreId) ? reqStoreId : storeIdsCsvFromGroupNameSuffix(reqGroupNameRaw);
                     String reqTriggerType = requestData.get("requestTriggerType") == null ? "" : String.valueOf(requestData.get("requestTriggerType"));
                     boolean manualAuditCreate = Boolean.TRUE.equals(requestData.get("_manualAuditCreate"));
+                    String reqOrderBizType = str(requestData.get("orderBizType"));
+                    String reqOrderBizTypeLabel = formatOrderBizTypeLabel(reqOrderBizType);
+                    String reqDeliveryDate = str(requestData.get("deliveryDate"));
 
                     // 提取 items：有药品则一行一药；无药品也至少返回一行便于展示患者信息
                     Object itemsObj = requestData.get("items");
@@ -2578,6 +2748,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                             orderItem.put("y3_image_info", reqY3ImageInfo);
                             orderItem.put("group_tokens", requestData.get("groupTokens"));
                             orderItem.put("manual_audit_create", manualAuditCreate);
+                            orderItem.put("order_biz_type", reqOrderBizType);
+                            orderItem.put("order_biz_type_label", reqOrderBizTypeLabel);
+                            orderItem.put("delivery_date", reqDeliveryDate);
                             orderItem.put("drug_name", item.get("drugName"));
                             orderItem.put("spec", item.get("spec"));
                             orderItem.put("qty", item.get("qty"));
@@ -2608,6 +2781,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         orderItem.put("y3_image_info", reqY3ImageInfo);
                         orderItem.put("group_tokens", requestData.get("groupTokens"));
                         orderItem.put("manual_audit_create", manualAuditCreate);
+                        orderItem.put("order_biz_type", reqOrderBizType);
+                        orderItem.put("order_biz_type_label", reqOrderBizTypeLabel);
+                        orderItem.put("delivery_date", reqDeliveryDate);
                         orderList.add(orderItem);
                     }
                     if (tokenQ != null && orderList.size() >= 100) {
@@ -2661,7 +2837,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                                                 String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
                                                 String storeId,
                                                 LocalDateTime createFrom, LocalDateTime createTo,
-                                                String requestTriggerType) {
+                                                String requestTriggerType, String orderBizType) {
         if (haidianJdbcTemplate == null) {
             return 0;
         }
@@ -2673,7 +2849,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         || StringUtils.hasText(patientPhone)
                         || StringUtils.hasText(patientIdCard)
                         || StringUtils.hasText(groupName)
-                        || StringUtils.hasText(storeId);
+                        || StringUtils.hasText(storeId)
+                        || StringUtils.hasText(orderBizType);
         boolean hasJsonFilters = hasJsonFiltersExceptTrigger || StringUtils.hasText(triggerNorm);
 
         // 快路径：仅按 requestTriggerType 过滤时，用 LIKE 直接统计，避免全量 JSON 扫描
@@ -2846,6 +3023,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     if (!matchesStoreIdFilter(requestData, storeId)) {
                         continue;
                     }
+                    if (!matchesOrderBizTypeFilter(requestData, orderBizType)) {
+                        continue;
+                    }
                     uniq.add(pid);
                 } catch (Exception ignored) {
                     // JSON 异常：统计口径以“无法解析则不计入筛选命中”为准，避免把未知数据算进来
@@ -2870,7 +3050,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             r.put("data", List.of());
             return r;
         }
-        return getOrderAuditList("0", groupToken, null, null, null, null, null, null, null, null, null, null, null);
+        return getOrderAuditList("0", groupToken, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private static boolean matchesTextFilter(String source, String keyword) {
@@ -3421,6 +3601,12 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     auditStatus = Integer.parseInt(String.valueOf(stObj).trim());
                 } catch (Exception ignored) {
                 }
+            }
+            if (auditStatus != null && auditStatus == AUDIT_STATUS_VOIDED) {
+                result.put("code", 409);
+                result.put("msg", "该订单已作废，不能再编辑");
+                result.put("data", Map.of("pendingId", pendingId, "auditStatus", auditStatus));
+                return result;
             }
             if (auditStatus != null && auditStatus != 0) {
                 result.put("code", 409);

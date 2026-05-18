@@ -183,6 +183,8 @@ public class McpCoreQueryController {
                 || StringUtils.hasText(request.getY3ImageInfo())
                 || StringUtils.hasText(request.getDeliveryHospital())
                 || StringUtils.hasText(request.getOrderCreateSource())
+                || StringUtils.hasText(request.getOrderBizType())
+                || StringUtils.hasText(request.getDeliveryDate())
                 || StringUtils.hasText(request.getRequestJson());
         if (structured) {
             java.util.Map<String, Object> map = new java.util.HashMap<>();
@@ -196,6 +198,12 @@ public class McpCoreQueryController {
             }
             if (StringUtils.hasText(request.getOrderCreateSource())) {
                 map.put("orderCreateSource", request.getOrderCreateSource());
+            }
+            if (StringUtils.hasText(request.getOrderBizType())) {
+                map.put("orderBizType", request.getOrderBizType().trim());
+            }
+            if (StringUtils.hasText(request.getDeliveryDate())) {
+                map.put("deliveryDate", request.getDeliveryDate().trim());
             }
             if (StringUtils.hasText(request.getGroupName())) {
                 map.put("groupName", request.getGroupName());
@@ -282,6 +290,17 @@ public class McpCoreQueryController {
     }
 
     /**
+     * 作废订单：更新 audit_status=4，作废后不可编辑/下单
+     */
+    @PostMapping("/core_order_void")
+    public Map<String, Object> coreOrderVoid(@RequestBody CoreOrderAuditRequest request) {
+        String pendingId = request != null ? request.getPendingId() : null;
+        String auditRemark = request != null ? request.getAuditRemark() : null;
+        log.info("MCP core_order_void 请求，pendingId={}", pendingId);
+        return mcpCoreQueryService.voidOrder(pendingId, auditRemark);
+    }
+
+    /**
      * 获取订单审核列表（供前端页面使用）
      */
     @GetMapping("/order-audit-list")
@@ -298,11 +317,12 @@ public class McpCoreQueryController {
             @RequestParam(required = false) String createDateEnd,
             @RequestParam(required = false) String createTimeStart,
             @RequestParam(required = false) String createTimeEnd,
-            @RequestParam(required = false) String requestTriggerType) {
-        log.info("MCP order-audit-list 请求，status={}, groupToken={}, pendingId={}, patientName={}, patientPhone={}, patientIdCard={}, groupName={}, storeId={}, createDateStart={}, createDateEnd={}, createTimeStart={}, createTimeEnd={}, requestTriggerType={}",
-                status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, storeId, createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType);
+            @RequestParam(required = false) String requestTriggerType,
+            @RequestParam(required = false) String orderBizType) {
+        log.info("MCP order-audit-list 请求，status={}, groupToken={}, pendingId={}, patientName={}, patientPhone={}, patientIdCard={}, groupName={}, storeId={}, createDateStart={}, createDateEnd={}, createTimeStart={}, createTimeEnd={}, requestTriggerType={}, orderBizType={}",
+                status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, storeId, createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType, orderBizType);
         return mcpCoreQueryService.getOrderAuditList(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, storeId,
-                createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType);
+                createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType, orderBizType);
     }
 
     /**
@@ -612,6 +632,14 @@ public class McpCoreQueryController {
          */
         @JsonAlias({"order_create_source"})
         private String orderCreateSource;
+        /**
+         * 业务状态：1 预下单（卖品），2 寄存，3 赠药
+         */
+        @JsonAlias({"order_biz_type", "biz_type", "bizType"})
+        private String orderBizType;
+        /** 送货日期 yyyy-MM-dd */
+        @JsonAlias({"delivery_date"})
+        private String deliveryDate;
     }
 
     @Data

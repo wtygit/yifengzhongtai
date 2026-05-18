@@ -99,6 +99,7 @@ public class McpOauthBearerFilter extends OncePerRequestFilter {
         }
         return "/mcp/core_order_approve".equals(path)
                 || "/mcp/core_order_reject".equals(path)
+                || "/mcp/core_order_void".equals(path)
                 // 审核页面“手动新增”会话态直调：无需 Bearer
                 || "/mcp/core_order_create".equals(path)
                 || "/mcp/core_shipment_create".equals(path);

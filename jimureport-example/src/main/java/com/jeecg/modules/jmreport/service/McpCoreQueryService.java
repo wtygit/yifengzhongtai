@@ -122,6 +122,11 @@ public interface McpCoreQueryService {
     Map<String, Object> rejectOrder(String pendingId, String auditRemark);
 
     /**
+     * 作废订单（audit_status=4），作废后不可编辑/下单
+     */
+    Map<String, Object> voidOrder(String pendingId, String auditRemark);
+
+    /**
      * 获取订单审核列表（供前端页面使用）
      *
      * @param status     审核状态筛选（0待审核 1已通过 2已驳回，为空则返回全部）
@@ -133,7 +138,7 @@ public interface McpCoreQueryService {
                                           String storeId,
                                           String createDateStart, String createDateEnd,
                                           String createTimeStart, String createTimeEnd,
-                                          String requestTriggerType);
+                                          String requestTriggerType, String orderBizType);
 
     /**
      * 按群分词查询待审核相关订单（与审核列表结构一致，默认仅 audit_status=0）

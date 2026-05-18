@@ -66,6 +66,18 @@
             background-color: #f8d7da;
             color: #842029;
         }
+        .status-voided {
+            background-color: #e2e3e5;
+            color: #41464b;
+        }
+        .cell-ellipsis-remark {
+            display: block;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: default;
+        }
         .expand-btn {
             cursor: pointer;
             color: #1890ff;
@@ -239,6 +251,13 @@
                     <option value="1">已下单</option>
                     <option value="2">已驳回</option>
                     <option value="3" class="trigger-idcard-only">已完成</option>
+                    <option value="4">已作废</option>
+                </select>
+                <select id="filterOrderBizType" class="form-select form-select-sm" style="width: 150px;" title="业务状态（手建单等）">
+                    <option value="">全部业务状态</option>
+                    <option value="1">预下单（卖品）</option>
+                    <option value="2">寄存</option>
+                    <option value="3">赠药</option>
                 </select>
                 <input id="filterPendingId" class="form-control form-control-sm" style="width: 180px;" placeholder="订单号/pendingId">
                 <input id="filterPatientName" class="form-control form-control-sm" style="width: 140px;" placeholder="患者姓名">
@@ -286,17 +305,19 @@
                         <th class="trigger-phone-only" style="width: 120px;">群名称</th>
                         <th style="width: 100px;">门店</th>
                         <th style="width: 120px;">送货医院</th>
-                        <th style="width: 100px;">下单备注</th>
+                        <th style="width: 110px;">业务状态</th>
+                        <th style="width: 110px;">送货日期</th>
+                        <th style="width: 140px;">下单备注</th>
                         <th style="width: 100px;">群昵称</th>
                         <th style="width: 140px;">聊天截图</th>
                         <th style="width: 180px;">创建时间</th>
                         <th style="width: 80px;">药品信息</th>
-                        <th style="width: 150px;">操作</th>
+                        <th style="width: 200px;">操作</th>
                     </tr>
                 </thead>
                 <tbody id="orderList">
                     <tr>
-                        <td colspan="14" class="text-center text-muted">加载中...</td>
+                        <td colspan="16" class="text-center text-muted">加载中...</td>
                     </tr>
                 </tbody>
             </table>
@@ -398,6 +419,21 @@
                             <label for="editDeliveryHospital" class="form-label">送货医院</label>
                             <input type="text" class="form-control" id="editDeliveryHospital" list="editHospitalDatalist" autocomplete="off" placeholder="输入关键字，海典 hospitallist 模糊匹配医院名称">
                         </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label for="editOrderBizType" class="form-label">业务状态</label>
+                                <select id="editOrderBizType" class="form-select">
+                                    <option value="">请选择</option>
+                                    <option value="1">预下单（卖品）</option>
+                                    <option value="2">寄存</option>
+                                    <option value="3">赠药</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="editDeliveryDate" class="form-label">送货日期</label>
+                                <input type="date" class="form-control" id="editDeliveryDate">
+                            </div>
+                        </div>
                         <div class="mb-3">
                             <label for="editOrderRemark" class="form-label">下单备注</label>
                             <textarea class="form-control" id="editOrderRemark" rows="2" placeholder="选填"></textarea>
@@ -477,6 +513,19 @@
                             <div class="col-md-4">
                                 <label class="form-label">门店号</label>
                                 <input id="manualOrderStoreId" type="text" class="form-control" placeholder="可选，不填则用当前登录门店">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">业务状态</label>
+                                <select id="manualOrderBizType" class="form-select">
+                                    <option value="">请选择</option>
+                                    <option value="1">预下单（卖品）</option>
+                                    <option value="2">寄存</option>
+                                    <option value="3">赠药</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">送货日期</label>
+                                <input id="manualDeliveryDate" type="date" class="form-control">
                             </div>
                         </div>
                         <hr class="my-3">
@@ -713,13 +762,14 @@
             // 取消门店编辑限制：所有门店都可以编辑任何订单数据
             return true;
         }
-        /** audit_status：0 待下单，1 已下单，2 已驳回，3 身份证私聊单本地已完成 */
+        /** audit_status：0 待下单，1 已下单，2 已驳回，3 身份证私聊单本地已完成，4 已作废 */
         function formatOrderAuditStatusText(auditStatus) {
             const st = Number(auditStatus);
             if (st === 0) return '待下单';
             if (st === 1) return '已下单';
             if (st === 2) return '已驳回';
             if (st === 3) return '已完成';
+            if (st === 4) return '已作废';
             return String(auditStatus);
         }
         function formatOrderAuditStatusClass(auditStatus) {
@@ -728,7 +778,21 @@
             if (st === 1) return 'status-approved';
             if (st === 2) return 'status-rejected';
             if (st === 3) return 'status-completed';
+            if (st === 4) return 'status-voided';
             return 'status-pending';
+        }
+        function formatOrderBizTypeLabel(code) {
+            const c = String(code || '').trim();
+            if (c === '1') return '预下单（卖品）';
+            if (c === '2') return '寄存';
+            if (c === '3') return '赠药';
+            return c || '-';
+        }
+        function renderRemarkEllipsis(remark) {
+            const t = (remark == null ? '' : String(remark)).trim();
+            if (!t || t === '-') return '-';
+            const esc = escapeHtml(t);
+            return '<span class="cell-ellipsis-remark" title="' + esc + '">' + esc + '</span>';
         }
         function renderY3ImageInfo(y3ImageInfo) {
             if (!y3ImageInfo) return '';
@@ -1149,6 +1213,7 @@
             };
             return {
                 status: val('filterStatus'),
+                orderBizType: val('filterOrderBizType'),
                 groupToken: val('filterGroupToken'),
                 pendingId: val('filterPendingId'),
                 patientName: val('filterPatientName'),
@@ -1169,6 +1234,7 @@
                 if (el) el.value = v || '';
             };
             set('filterStatus', filters.status);
+            set('filterOrderBizType', filters.orderBizType);
             set('filterGroupToken', filters.groupToken);
             set('filterPendingId', filters.pendingId);
             set('filterPatientName', filters.patientName);
@@ -1192,7 +1258,7 @@
 
         function resetFilters() {
             setAuditFilters({
-                status: '', groupToken: '', pendingId: '', patientName: '', patientPhone: '', patientIdCard: '', groupName: '', storeId: '',
+                status: '', orderBizType: '', groupToken: '', pendingId: '', patientName: '', patientPhone: '', patientIdCard: '', groupName: '', storeId: '',
                 createDateStart: '', createDateEnd: '', requestTriggerType: currentOrderTriggerType
             });
             localStorage.removeItem(mcpAuditFiltersStorageKey(currentOrderTriggerType));
@@ -1202,7 +1268,7 @@
 
         function loadOrders() {
             document.getElementById('loading').style.display = 'block';
-            document.getElementById('orderList').innerHTML = '<tr><td colspan="14" class="text-center text-muted">加载中...</td></tr>';
+            document.getElementById('orderList').innerHTML = '<tr><td colspan="16" class="text-center text-muted">加载中...</td></tr>';
             const filters = getAuditFilters();
             localStorage.setItem(MCP_AUDIT_GROUP_TOKEN_KEY, filters.groupToken || '');
             localStorage.setItem(mcpAuditFiltersStorageKey(currentOrderTriggerType), JSON.stringify(filters));
@@ -1226,14 +1292,14 @@
                         renderOrders(data.data || [], data.totalCount);
                     } else {
                         document.getElementById('orderList').innerHTML = 
-                            '<tr><td colspan="14" class="text-center text-danger">加载失败：' + (data?.msg || '未知错误') + '</td></tr>';
+                            '<tr><td colspan="16" class="text-center text-danger">加载失败：' + (data?.msg || '未知错误') + '</td></tr>';
                         updateFilterResultCount(0);
                     }
                 })
                 .catch(err => {
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('orderList').innerHTML = 
-                        '<tr><td colspan="14" class="text-center text-danger">加载失败：' + err.message + '</td></tr>';
+                        '<tr><td colspan="16" class="text-center text-danger">加载失败：' + err.message + '</td></tr>';
                     updateFilterResultCount(0);
                 });
         }
@@ -1346,7 +1412,7 @@
             const groupWrap = document.getElementById('manualGroupNameWrap');
             if (groupWrap) groupWrap.style.display = isIdcard ? 'none' : '';
 
-            ['manualPatientName', 'manualPatientPhone', 'manualPatientIdCard', 'manualGroupName', 'manualOrderRemark', 'manualOrderStoreId',
+            ['manualPatientName', 'manualPatientPhone', 'manualPatientIdCard', 'manualGroupName', 'manualOrderRemark', 'manualOrderStoreId', 'manualOrderBizType', 'manualDeliveryDate',
                 'manualUserGroupNickname', 'manualDeliveryHospital']
                 .forEach(id => {
                     const el = document.getElementById(id);
@@ -1436,6 +1502,10 @@
                 items: items,
                 orderCreateSource: 'mcp_order_audit_manual'
             };
+            const manualBiz = (document.getElementById('manualOrderBizType') || {}).value || '';
+            const manualDelDate = (document.getElementById('manualDeliveryDate') || {}).value || '';
+            if (manualBiz) payload.orderBizType = manualBiz;
+            if (manualDelDate) payload.deliveryDate = manualDelDate;
             if ((deliveryHospital || '').trim()) {
                 payload.deliveryHospital = (deliveryHospital || '').trim();
             }
@@ -1676,7 +1746,7 @@
         function renderOrders(orders, totalCount) {
             const container = document.getElementById('orderList');
             if (!orders || orders.length === 0) {
-                container.innerHTML = '<tr><td colspan="14" class="text-center text-muted">暂无数据</td></tr>';
+                container.innerHTML = '<tr><td colspan="16" class="text-center text-muted">暂无数据</td></tr>';
                 updateFilterResultCount(totalCount || 0);
                 return;
             }
@@ -1708,7 +1778,10 @@
                             user_group_nickname: order.user_group_nickname || order.userGroupNickname || '',
                             delivery_hospital: order.delivery_hospital || order.deliveryHospital || '',
                             y3_image_info: order.y3_image_info || order.y3ImageInfo || '',
-                            manual_audit_create: !!(order.manual_audit_create || order.manualAuditCreate)
+                            manual_audit_create: !!(order.manual_audit_create || order.manualAuditCreate),
+                            order_biz_type: order.order_biz_type || order.orderBizType || '',
+                            order_biz_type_label: order.order_biz_type_label || order.orderBizTypeLabel || formatOrderBizTypeLabel(order.order_biz_type || order.orderBizType),
+                            delivery_date: order.delivery_date || order.deliveryDate || ''
                         },
                         drugs: []
                     });
@@ -1791,7 +1864,9 @@
                         <td class="small text-break trigger-phone-only">${escapeHtml(order.group_name || '-')}</td>
                         <td class="small text-break">${escapeHtml(storeDisplay || '-')}</td>
                         <td class="small text-break">${escapeHtml(order.delivery_hospital || '-')}</td>
-                        <td class="small text-break">${escapeHtml(order.order_remark || '-')}</td>
+                        <td class="small text-break">${escapeHtml(order.order_biz_type_label || formatOrderBizTypeLabel(order.order_biz_type) || '-')}</td>
+                        <td class="small text-break">${escapeHtml(order.delivery_date || '-')}</td>
+                        <td class="small">${renderRemarkEllipsis(order.order_remark || '-')}</td>
                         <td class="small text-break">${escapeHtml(order.user_group_nickname || '-')}</td>
                         <td class="small text-break" title="${escapeHtml(order.y3_image_info || '')}">${y3Html || '-'}</td>
                         <td>${createTime}</td>
@@ -1811,15 +1886,18 @@
                                  </div>` : 
                                 '<span class="text-muted">-</span>'}
                         </td>
-                        <td>
-                            ${canStore
-                                ? `<button type="button" class="btn btn-sm btn-secondary me-1" onclick="openEditModal('${pendingId}')">编辑</button>`
-                                : `<button type="button" class="btn btn-sm btn-secondary me-1" disabled title="当前登录门店不在群名称后缀门店列表中">编辑</button>`}
-                            ${auditStatus === 0 ?
+                        <td class="text-nowrap">
+                            ${auditStatus === 4 ? '<span class="text-muted small">已作废</span>' : (
                                 (canStore
-                                    ? `<button type="button" class="btn btn-sm btn-primary" onclick="submitOrder('${pendingId}')">下单</button>`
-                                    : `<button type="button" class="btn btn-sm btn-secondary" onclick="submitOrder('${pendingId}')" title="当前登录门店不在群名称后缀门店列表中">下单</button>`) :
-                                '<span class="text-muted">已处理</span>'}
+                                    ? `<button type="button" class="btn btn-sm btn-secondary me-1" onclick="openEditModal('${pendingId}')">编辑</button>`
+                                    : `<button type="button" class="btn btn-sm btn-secondary me-1" disabled title="当前登录门店不在群名称后缀门店列表中">编辑</button>`)
+                                + (auditStatus === 0
+                                    ? (canStore
+                                        ? `<button type="button" class="btn btn-sm btn-primary me-1" onclick="submitOrder('${pendingId}')">下单</button>`
+                                        : `<button type="button" class="btn btn-sm btn-secondary me-1" onclick="submitOrder('${pendingId}')" title="当前登录门店不在群名称后缀门店列表中">下单</button>`)
+                                    : '<span class="text-muted small me-1">已处理</span>')
+                                + `<button type="button" class="btn btn-sm btn-outline-danger" onclick="voidOrder('${pendingId}')">作废</button>`
+                            )}
                         </td>
                     </tr>
                 `;
@@ -1978,7 +2056,52 @@
             }
         }
 
+
+        function voidOrder(pendingId) {
+            if (!pendingId) return;
+            const od = orderDataMap.get(pendingId);
+            if (od && Number(od.order.audit_status) === 4) {
+                alert('该订单已是作废状态');
+                return;
+            }
+            if (!confirm('确认作废该订单？作废后不可再编辑或下单。')) return;
+            fetch(`${BASE_URL}/mcp/core_order_void`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ pendingId: pendingId, auditRemark: '页面作废' })
+            })
+                .then(async function (r) {
+                    const text = await r.text();
+                    let data = null;
+                    try {
+                        data = text ? JSON.parse(text) : null;
+                    } catch (e) {
+                        throw new Error(r.status === 401 ? '未登录或会话已过期，请刷新页面重新登录' : ('HTTP ' + r.status));
+                    }
+                    if (!r.ok && data && data.error_description) {
+                        throw new Error(data.error_description);
+                    }
+                    if (!r.ok && data && data.msg) {
+                        throw new Error(data.msg);
+                    }
+                    if (!r.ok) {
+                        throw new Error('HTTP ' + r.status);
+                    }
+                    return data;
+                })
+                .then(data => {
+                    if (data && data.code === 0) {
+                        loadOrders();
+                    } else {
+                        alert('作废失败：' + (data && data.msg ? data.msg : '未知错误'));
+                    }
+                })
+                .catch(e => alert('作废失败：' + (e && e.message ? e.message : String(e))));
+        }
+
         function submitOrder(pendingId) {
+
             const orderData = orderDataMap.get(pendingId);
             // 身份证触发=私聊单：门店权限由后端按 storeId 校验；不再依赖群名称后缀
             if (currentOrderTriggerType !== 'idcard' && orderData && !canEditOrderByGroupName(orderData.order.group_name)) {
@@ -2018,6 +2141,8 @@
                 orderRemark: orderData.order.order_remark || '',
                 userGroupNickname: orderData.order.user_group_nickname || '',
                 deliveryHospital: orderData.order.delivery_hospital || '',
+                orderBizType: orderData.order.order_biz_type || '',
+                deliveryDate: orderData.order.delivery_date || '',
                 y3ImageInfo: orderData.order.y3_image_info || '',
                 items: (orderData.drugs && orderData.drugs.length > 0) ? orderData.drugs.map(drug => ({
                     drugName: drug.name,
@@ -2078,6 +2203,14 @@
                 alert('订单数据不存在');
                 return;
             }
+            if (Number(orderData.order.audit_status) === 4) {
+                alert('该订单已作废，不能编辑');
+                return;
+            }
+            if (Number(orderData.order.audit_status) !== 0) {
+                alert('该订单已处理，不能编辑');
+                return;
+            }
             if (currentOrderTriggerType !== 'idcard' && !canEditOrderByGroupName(orderData.order.group_name)) {
                 alert('当前登录门店与群名称后缀首个门店编号不一致，无法编辑。请重新登录并选择对应门店。');
                 return;
@@ -2104,6 +2237,10 @@
             if (epe) epe.value = order.patient_education || '';
             document.getElementById('editUserGroupNickname').value = order.user_group_nickname || '';
             document.getElementById('editDeliveryHospital').value = order.delivery_hospital || '';
+            const eobt = document.getElementById('editOrderBizType');
+            if (eobt) eobt.value = order.order_biz_type || '';
+            const edd = document.getElementById('editDeliveryDate');
+            if (edd) edd.value = (order.delivery_date || '').substring(0, 10);
             document.getElementById('editOrderRemark').value = order.order_remark || '';
             const y3ImageInfo = order.y3_image_info || '';
             document.getElementById('editY3ImageInfo').value = y3ImageInfo;
@@ -2300,6 +2437,8 @@
                 storeId: storeIdEdit,
                 patientEducation: patientEducationEdit,
                 orderRemark: orderRemark,
+                orderBizType: (document.getElementById('editOrderBizType') || {}).value || '',
+                deliveryDate: (document.getElementById('editDeliveryDate') || {}).value || '',
                 userGroupNickname: userGroupNickname,
                 deliveryHospital: deliveryHospital,
                 y3ImageInfo: y3ImageInfo,
