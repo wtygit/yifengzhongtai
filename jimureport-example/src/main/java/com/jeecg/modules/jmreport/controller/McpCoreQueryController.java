@@ -1,6 +1,7 @@
 package com.jeecg.modules.jmreport.controller;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jeecg.modules.jmreport.config.McpOauthProperties;
 import com.jeecg.modules.jmreport.service.McpCoreQueryService;
 import com.jeecg.modules.jmreport.service.McpOauthTokenService;
@@ -56,6 +57,8 @@ public class McpCoreQueryController {
     private McpOauthProperties oauthProperties;
     @Autowired
     private McpOauthTokenService mcpOauthTokenService;
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Value("${jeecg.path.upload:/opt/upload}")
     private String jeecgUploadRoot;
@@ -262,9 +265,12 @@ public class McpCoreQueryController {
         String callbackData = request != null ? request.getCallbackData() : null;
         String receiverName = request != null ? request.getReceiverName() : null;
         String completionImagesJson = request != null ? request.getCompletionImagesJson() : null;
-        log.info("MCP core_order_status_update 请求，orderId={}, pendingId={}, statusCode={}, status={}", orderId, pendingId, statusCode, status);
-        return mcpCoreQueryService.updateOrderStatus(
-                orderId, pendingId, statusCode, status, invoiceInfo, callbackData, receiverName, completionImagesJson);
+        String deliveryTime = request != null ? request.getDeliveryTime() : null;
+        log.info("MCP core_order_status_update 请求，orderId={}, pendingId={}, statusCode={}, status={}, deliveryTime={}",
+                orderId, pendingId, statusCode, status, deliveryTime);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = request != null ? objectMapper.convertValue(request, Map.class) : new java.util.HashMap<>();
+        return mcpCoreQueryService.updateOrderStatus(body);
     }
 
     /**
@@ -312,6 +318,34 @@ public class McpCoreQueryController {
             @RequestParam(required = false) String patientPhone,
             @RequestParam(required = false) String patientIdCard,
             @RequestParam(required = false) String groupName,
+            @RequestParam(required = false) String userGroupNickname,
+            @RequestParam(required = false) String storeId,
+            @RequestParam(required = false) String createDateStart,
+            @RequestParam(required = false) String createDateEnd,
+            @RequestParam(required = false) String createTimeStart,
+            @RequestParam(required = false) String createTimeEnd,
+            @RequestParam(required = false) String requestTriggerType,
+            @RequestParam(required = false) String orderBizType,
+            @RequestParam(required = false, defaultValue = "false") boolean forExport) {
+        log.info("MCP order-audit-list 请求，status={}, groupToken={}, pendingId={}, patientName={}, patientPhone={}, patientIdCard={}, groupName={}, userGroupNickname={}, storeId={}, createDateStart={}, createDateEnd={}, createTimeStart={}, createTimeEnd={}, requestTriggerType={}, orderBizType={}, forExport={}",
+                status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, userGroupNickname, storeId, createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType, orderBizType, forExport);
+        return mcpCoreQueryService.getOrderAuditList(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, userGroupNickname, storeId,
+                createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType, orderBizType, forExport);
+    }
+
+    /**
+     * 订单审核列表全量统计（与 order-audit-list 筛选一致，前端可并行请求以缩短首屏等待）
+     */
+    @GetMapping("/order-audit-count")
+    public Map<String, Object> getOrderAuditCount(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String groupToken,
+            @RequestParam(required = false) String pendingId,
+            @RequestParam(required = false) String patientName,
+            @RequestParam(required = false) String patientPhone,
+            @RequestParam(required = false) String patientIdCard,
+            @RequestParam(required = false) String groupName,
+            @RequestParam(required = false) String userGroupNickname,
             @RequestParam(required = false) String storeId,
             @RequestParam(required = false) String createDateStart,
             @RequestParam(required = false) String createDateEnd,
@@ -319,10 +353,16 @@ public class McpCoreQueryController {
             @RequestParam(required = false) String createTimeEnd,
             @RequestParam(required = false) String requestTriggerType,
             @RequestParam(required = false) String orderBizType) {
-        log.info("MCP order-audit-list 请求，status={}, groupToken={}, pendingId={}, patientName={}, patientPhone={}, patientIdCard={}, groupName={}, storeId={}, createDateStart={}, createDateEnd={}, createTimeStart={}, createTimeEnd={}, requestTriggerType={}, orderBizType={}",
-                status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, storeId, createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType, orderBizType);
-        return mcpCoreQueryService.getOrderAuditList(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, storeId,
+        return mcpCoreQueryService.getOrderAuditCount(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName, userGroupNickname, storeId,
                 createDateStart, createDateEnd, createTimeStart, createTimeEnd, requestTriggerType, orderBizType);
+    }
+
+    /**
+     * 单笔订单详情（含 order_log 联表回填），供已下单行「订单详情」弹窗
+     */
+    @GetMapping("/order-audit-detail")
+    public Map<String, Object> getOrderAuditDetail(@RequestParam String pendingId) {
+        return mcpCoreQueryService.getOrderAuditDetail(pendingId);
     }
 
     /**
@@ -633,7 +673,7 @@ public class McpCoreQueryController {
         @JsonAlias({"order_create_source"})
         private String orderCreateSource;
         /**
-         * 业务状态：1 预下单（卖品），2 寄存，3 赠药
+         * 业务状态：1 预下单（卖品），2 寄存，3 赠药，4 服务
          */
         @JsonAlias({"order_biz_type", "biz_type", "bizType"})
         private String orderBizType;
@@ -698,6 +738,11 @@ public class McpCoreQueryController {
          * 完成图片内容（JSON 字符串）
          */
         private String completionImagesJson;
+        /**
+         * 送达时间（有值时按 pendingId 更新表A user_request_data，不新增记录）
+         */
+        @JsonAlias({"delivery_time"})
+        private String deliveryTime;
     }
 
     /**

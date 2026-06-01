@@ -78,6 +78,20 @@
             white-space: nowrap;
             cursor: default;
         }
+        .order-detail-form .form-control[readonly],
+        .order-detail-form .form-select:disabled {
+            background-color: #f8f9fa;
+            cursor: default;
+        }
+        .order-detail-section-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 0.35rem;
+            margin-bottom: 0.75rem;
+            margin-top: 0.25rem;
+        }
         .expand-btn {
             cursor: pointer;
             color: #1890ff;
@@ -157,10 +171,77 @@
             max-height: 70vh;
             overflow-y: auto;
         }
-        .mcp-audit-group-token-bar {
+        .mcp-audit-filter-panel {
+            background: #fafbfc;
+            border: 1px solid #e8ecef;
+            border-radius: 8px;
+            padding: 1rem 1.25rem 1.125rem;
+        }
+        .mcp-audit-filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+            gap: 0.65rem 0.85rem;
+            align-items: end;
+        }
+        .mcp-audit-filter-field label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #6c757d;
+            margin-bottom: 0.25rem;
+            line-height: 1.2;
+        }
+        .mcp-audit-filter-field .form-control,
+        .mcp-audit-filter-field .form-select {
+            width: 100%;
+            min-width: 0;
+        }
+        .mcp-audit-filter-date {
+            grid-column: span 2;
+            min-width: 260px;
+        }
+        .mcp-audit-filter-date-range {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .mcp-audit-filter-date-range .form-control {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+        .mcp-audit-filter-group-row {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 0.65rem 0.85rem;
+            align-items: end;
             background: #e6f4ff;
             border: 1px solid #bae0ff;
             border-radius: 8px;
+            padding: 0.65rem 0.85rem 0.75rem;
+            margin-top: 0.15rem;
+        }
+        .mcp-audit-filter-group-title {
+            grid-column: 1 / -1;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #0958d9;
+            margin-bottom: -0.15rem;
+        }
+        .mcp-audit-filter-hint {
+            display: block;
+            font-size: 0.68rem;
+            color: #8c8c8c;
+            font-weight: 400;
+            margin-top: 0.1rem;
+        }
+        .mcp-audit-filter-actions {
+            border-color: #e8ecef !important;
+        }
+        @media (max-width: 576px) {
+            .mcp-audit-filter-date {
+                grid-column: span 1;
+            }
         }
         /* 停留在「发货登记」时若收到订单 WS 事件，在「订单审核」Tab 上提示 */
         .mcp-tab-attention-dot {
@@ -241,47 +322,89 @@
         </ul>
         <div class="tab-content border border-top-0 rounded-bottom p-3 bg-white mb-3" style="border-color: #dee2e6 !important;">
         <div class="tab-pane fade show active" id="mcp-pane-order" role="tabpanel">
-        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-            <h3 class="h5 mb-0 text-secondary">待审核订单</h3>
-            <div class="d-flex align-items-center flex-wrap gap-2 justify-content-end">
-                <span id="filterResultCount" class="badge bg-info text-dark">筛选结果：0单</span>
-                <select id="filterStatus" class="form-select form-select-sm" style="width: 120px;" title="审核状态：接口新建的待审核单为「待下单」；筛成「已下单」时看不到未审核数据">
-                    <option value="">全部状态</option>
-                    <option value="0">待下单</option>
-                    <option value="1">已下单</option>
-                    <option value="2">已驳回</option>
-                    <option value="3" class="trigger-idcard-only">已完成</option>
-                    <option value="4">已作废</option>
-                </select>
-                <select id="filterOrderBizType" class="form-select form-select-sm" style="width: 150px;" title="业务状态（手建单等）">
-                    <option value="">全部业务状态</option>
-                    <option value="1">预下单（卖品）</option>
-                    <option value="2">寄存</option>
-                    <option value="3">赠药</option>
-                </select>
-                <input id="filterPendingId" class="form-control form-control-sm" style="width: 180px;" placeholder="订单号/pendingId">
-                <input id="filterPatientName" class="form-control form-control-sm" style="width: 140px;" placeholder="患者姓名">
-                <input id="filterPatientPhone" class="form-control form-control-sm" style="width: 150px;" placeholder="手机号">
-                <input id="filterPatientIdCard" class="form-control form-control-sm d-none" style="width: 200px;" placeholder="身份证号">
-                <input id="filterGroupName" class="form-control form-control-sm trigger-phone-only" style="width: 180px;" placeholder="群名称">
-                <input id="filterStoreId" class="form-control form-control-sm" style="width: 120px;" placeholder="门店号" title="按订单内门店号/群后缀门店筛选">
-                <label class="mb-0 small text-muted" for="filterCreateDateStart">创建日期</label>
-                <input id="filterCreateDateStart" type="date" class="form-control form-control-sm" style="width: 155px;" title="创建日期起（含当天 0 点起）">
-                <span class="small text-muted">至</span>
-                <input id="filterCreateDateEnd" type="date" class="form-control form-control-sm" style="width: 155px;" title="创建日期止（含当天全天）">
-                <button type="button" class="btn btn-outline-success" onclick="exportSelectedOrders()">导出所选</button>
-                <button type="button" class="btn btn-outline-primary" onclick="openManualAddOrderModal()">手动新增</button>
-                <button type="button" class="btn btn-outline-secondary" onclick="resetFilters()">重置</button>
-                <button type="button" class="btn btn-primary" onclick="loadOrders()">查询/刷新</button>
+        <div class="mcp-audit-filter-panel mb-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <h3 class="h5 mb-0 text-secondary">待审核订单</h3>
+                <span id="filterResultCount" class="badge bg-info text-dark fs-6">筛选结果：0单</span>
             </div>
-        </div>
-        <div class="mcp-audit-group-token-bar d-flex flex-wrap align-items-center gap-2 mb-3 px-3 py-2">
-            <span class="small fw-semibold text-primary mb-0">群分词</span>
-            <select id="filterGroupToken" class="form-select form-select-sm" style="width: 220px; max-width: 100%;"
-                    title="按配置表分词筛选；与「群名称」文本筛选不同">
-                <option value="">全部</option>
-            </select>
-            <span class="small text-muted">（与上方「群名称」筛选不同：此处为配置分词命中）</span>
+
+            <div class="mcp-audit-filter-grid">
+                <div class="mcp-audit-filter-field">
+                    <label for="filterStatus">审核状态</label>
+                    <select id="filterStatus" class="form-select form-select-sm"
+                            title="接口新建的待审核单为「待下单」；筛成「已下单」时看不到未审核数据">
+                        <option value="">全部状态</option>
+                        <option value="0">待下单</option>
+                        <option value="1">已下单</option>
+                        <option value="2">已驳回</option>
+                        <option value="3" class="trigger-idcard-only">已完成</option>
+                        <option value="4">已作废</option>
+                    </select>
+                </div>
+                <div class="mcp-audit-filter-field">
+                    <label for="filterOrderBizType">业务状态</label>
+                    <select id="filterOrderBizType" class="form-select form-select-sm" title="业务状态（手建单等）">
+                        <option value="">全部业务状态</option>
+                        <option value="1">预下单（卖品）</option>
+                        <option value="2">寄存</option>
+                        <option value="3">赠药</option>
+                        <option value="4">服务</option>
+                    </select>
+                </div>
+                <div class="mcp-audit-filter-field">
+                    <label for="filterPendingId">订单号</label>
+                    <input id="filterPendingId" class="form-control form-control-sm" placeholder="pendingId">
+                </div>
+                <div class="mcp-audit-filter-field mcp-audit-filter-date">
+                    <label>创建日期</label>
+                    <div class="mcp-audit-filter-date-range">
+                        <input id="filterCreateDateStart" type="date" class="form-control form-control-sm" title="创建日期起（含当天 0 点起）">
+                        <span class="text-muted small flex-shrink-0">至</span>
+                        <input id="filterCreateDateEnd" type="date" class="form-control form-control-sm" title="创建日期止（含当天全天）">
+                    </div>
+                </div>
+                <div class="mcp-audit-filter-field">
+                    <label for="filterPatientName">患者姓名</label>
+                    <input id="filterPatientName" class="form-control form-control-sm" placeholder="模糊匹配">
+                </div>
+                <div class="mcp-audit-filter-field trigger-phone-only">
+                    <label for="filterPatientPhone">手机号</label>
+                    <input id="filterPatientPhone" class="form-control form-control-sm" placeholder="模糊匹配">
+                </div>
+                <div class="mcp-audit-filter-field trigger-idcard-only">
+                    <label for="filterPatientIdCard">身份证号</label>
+                    <input id="filterPatientIdCard" class="form-control form-control-sm" placeholder="模糊匹配">
+                </div>
+                <div class="mcp-audit-filter-field">
+                    <label for="filterStoreId">门店号</label>
+                    <input id="filterStoreId" class="form-control form-control-sm" placeholder="门店号" title="按订单内门店号/群后缀门店筛选">
+                </div>
+
+                <div class="mcp-audit-filter-group-row">
+                    <div class="mcp-audit-filter-group-title">群相关</div>
+                    <div class="mcp-audit-filter-field trigger-phone-only">
+                        <label for="filterGroupName">群名称<span class="mcp-audit-filter-hint">文本模糊</span></label>
+                        <input id="filterGroupName" class="form-control form-control-sm" placeholder="群名称">
+                    </div>
+                    <div class="mcp-audit-filter-field">
+                        <label for="filterGroupToken">群分词<span class="mcp-audit-filter-hint">配置表分词命中</span></label>
+                        <select id="filterGroupToken" class="form-select form-select-sm" title="按配置表分词筛选">
+                            <option value="">全部分词</option>
+                        </select>
+                    </div>
+                    <div class="mcp-audit-filter-field">
+                        <label for="filterUserGroupNickname">群昵称<span class="mcp-audit-filter-hint">用户昵称模糊</span></label>
+                        <input id="filterUserGroupNickname" class="form-control form-control-sm" placeholder="群昵称">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mcp-audit-filter-actions d-flex flex-wrap justify-content-end align-items-center gap-2 mt-3 pt-3 border-top">
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="exportSelectedOrders()">导出所选</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="openManualAddOrderModal()">手动新增</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetFilters()">重置</button>
+                <button type="button" class="btn btn-sm btn-primary px-3" onclick="loadOrders()">查询 / 刷新</button>
+            </div>
         </div>
 
         <div id="loading" class="text-center" style="display: none;">
@@ -427,6 +550,7 @@
                                     <option value="1">预下单（卖品）</option>
                                     <option value="2">寄存</option>
                                     <option value="3">赠药</option>
+                                    <option value="4">服务</option>
                                 </select>
                             </div>
                             <div class="col-md-6">
@@ -468,6 +592,24 @@
         </div>
     </div>
 
+    <!-- 小程序 core_order_status_update 回调详情 -->
+    <div class="modal fade" id="orderDetailModal" tabindex="-1" aria-labelledby="orderDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="orderDetailModalLabel">订单详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    <div id="orderDetailModalAlert" class="alert alert-info py-2 small mb-3 d-none"></div>
+                    <div id="orderDetailModalBody" class="order-detail-form"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- 手动新增订单（补漏单） -->
     <div class="modal fade" id="manualAddOrderModal" tabindex="-1" aria-labelledby="manualAddOrderModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -521,6 +663,7 @@
                                     <option value="1">预下单（卖品）</option>
                                     <option value="2">寄存</option>
                                     <option value="3">赠药</option>
+                                    <option value="4">服务</option>
                                 </select>
                             </div>
                             <div class="col-md-4">
@@ -714,6 +857,8 @@
         let orderDataMap = new Map(); // 存储订单原始数据，用于保存修改
         let currentOrderTriggerType = 'phone'; // phone | idcard
         let selectedOrderPendingIds = new Set();
+        /** 与 order-audit-count 一致的全量条数，用于导出前提示是否未加载完整列表 */
+        let lastFilterTotalCount = null;
         let hospitalSuggestTimerEdit = null;
         let hospitalSuggestTimerManual = null;
 
@@ -786,6 +931,7 @@
             if (c === '1') return '预下单（卖品）';
             if (c === '2') return '寄存';
             if (c === '3') return '赠药';
+            if (c === '4') return '服务';
             return c || '-';
         }
         function renderRemarkEllipsis(remark) {
@@ -1029,19 +1175,10 @@
             const phoneInput = document.getElementById('filterPatientPhone');
             const idCardInput = document.getElementById('filterPatientIdCard');
             const groupNameInput = document.getElementById('filterGroupName');
-            if (phoneInput) {
-                phoneInput.classList.toggle('d-none', isIdcard);
-                if (isIdcard) phoneInput.value = '';
-            }
-            if (idCardInput) {
-                idCardInput.classList.toggle('d-none', !isIdcard);
-                if (!isIdcard) idCardInput.value = '';
-            }
-            if (groupNameInput) {
-                groupNameInput.classList.toggle('d-none', isIdcard);
-                if (isIdcard) groupNameInput.value = '';
-            }
-            const titleEl = document.querySelector('#mcp-pane-order h3.h5');
+            if (phoneInput && isIdcard) phoneInput.value = '';
+            if (idCardInput && !isIdcard) idCardInput.value = '';
+            if (groupNameInput && isIdcard) groupNameInput.value = '';
+            const titleEl = document.querySelector('#mcp-pane-order .mcp-audit-filter-panel h3.h5');
             if (titleEl) {
                 titleEl.textContent = isIdcard ? '待审核订单（身份证触发）' : '待审核订单';
             }
@@ -1077,27 +1214,86 @@
                 a.remove();
             }, 0);
         }
-        function exportSelectedOrders() {
-            if (!selectedOrderPendingIds.size) {
-                alert('请先勾选要导出的订单');
-                return;
-            }
+        function hasAnyAuditFilterForExport(filters) {
+            if (!filters) return false;
+            return !!(filters.status || filters.orderBizType || filters.groupToken || filters.pendingId
+                || filters.patientName || filters.patientPhone || filters.patientIdCard || filters.groupName
+                || filters.userGroupNickname || filters.storeId || filters.createDateStart || filters.createDateEnd);
+        }
+
+        function buildOrderExportRowsFromApi(orders) {
             const isIdcard = currentOrderTriggerType === 'idcard';
             const headers = isIdcard
                 ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间']
                 : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间'];
             const rows = [];
-            selectedOrderPendingIds.forEach(pid => {
-                const od = orderDataMap.get(pid);
-                if (!od || !od.order) return;
-                const o = od.order;
+            (orders || []).forEach(o => {
+                const pid = o.pending_id || o.pendingId || '';
+                if (!pid) return;
                 const statusText = formatOrderAuditStatusText(o.audit_status);
                 rows.push(isIdcard
                     ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]
                     : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]);
             });
-            const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
-            downloadExcel((isIdcard ? '订单审核_身份证_' : '订单审核_手机号_') + stamp + '.xls', headers, rows);
+            return { isIdcard, headers, rows };
+        }
+
+        function fetchOrderAuditListForExport(filters) {
+            const qs = new URLSearchParams(buildOrderAuditQueryString(filters));
+            qs.set('forExport', 'true');
+            return fetch(`${BASE_URL}/mcp/order-audit-list?` + qs.toString(), {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            }).then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            });
+        }
+
+        function exportSelectedOrders() {
+            const filters = getAuditFilters();
+            const hasFilter = hasAnyAuditFilterForExport(filters);
+            const hasSelection = selectedOrderPendingIds.size > 0;
+            if (!hasSelection && !hasFilter) {
+                alert('请先勾选要导出的订单，或设置筛选条件后导出当前筛选结果');
+                return;
+            }
+            const finishExport = (headers, rows, isIdcard) => {
+                if (!rows.length) {
+                    alert(hasSelection ? '所选订单无有效数据' : '当前筛选结果无有效数据可导出');
+                    return;
+                }
+                warnIfExportIncomplete(rows.length);
+                const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+                downloadExcel((isIdcard ? '订单审核_身份证_' : '订单审核_手机号_') + stamp + '.xls', headers, rows);
+            };
+            if (hasFilter) {
+                const loading = document.getElementById('loading');
+                if (loading) loading.style.display = 'block';
+                fetchOrderAuditListForExport(filters)
+                    .then(data => {
+                        if (loading) loading.style.display = 'none';
+                        if (!data || data.code !== 0) {
+                            alert('导出失败：' + (data && data.msg ? data.msg : '未知错误'));
+                            return;
+                        }
+                        let orders = data.data || [];
+                        if (hasSelection) {
+                            const selected = selectedOrderPendingIds;
+                            orders = orders.filter(o => selected.has(o.pending_id || o.pendingId || ''));
+                        }
+                        const built = buildOrderExportRowsFromApi(orders);
+                        finishExport(built.headers, built.rows, built.isIdcard);
+                    })
+                    .catch(err => {
+                        const loading = document.getElementById('loading');
+                        if (loading) loading.style.display = 'none';
+                        alert('导出失败：' + err.message);
+                    });
+                return;
+            }
+            const { isIdcard, headers, rows } = buildOrderExportRows(selectedOrderPendingIds);
+            finishExport(headers, rows, isIdcard);
         }
         const MCP_AUDIT_GROUP_TOKEN_KEY = 'mcp_order_audit_group_token';
         /** 旧版统一 key，仅用于迁移到按 Tab 拆分后的存储 */
@@ -1144,6 +1340,7 @@
                 set('filterPatientPhone', saved.patientPhone);
                 set('filterPatientIdCard', saved.patientIdCard);
                 set('filterGroupName', saved.groupName);
+                set('filterUserGroupNickname', saved.userGroupNickname);
                 set('filterStoreId', saved.storeId);
                 set('filterCreateDateStart', saved.createDateStart);
                 set('filterCreateDateEnd', saved.createDateEnd);
@@ -1220,6 +1417,7 @@
                 patientPhone: val('filterPatientPhone'),
                 patientIdCard: val('filterPatientIdCard'),
                 groupName: val('filterGroupName'),
+                userGroupNickname: val('filterUserGroupNickname'),
                 storeId: val('filterStoreId'),
                 createDateStart: val('filterCreateDateStart'),
                 createDateEnd: val('filterCreateDateEnd'),
@@ -1241,6 +1439,7 @@
             set('filterPatientPhone', filters.patientPhone);
             set('filterPatientIdCard', filters.patientIdCard);
             set('filterGroupName', filters.groupName);
+            set('filterUserGroupNickname', filters.userGroupNickname);
             set('filterStoreId', filters.storeId);
             set('filterCreateDateStart', filters.createDateStart);
             set('filterCreateDateEnd', filters.createDateEnd);
@@ -1253,17 +1452,59 @@
         function updateFilterResultCount(orderCount) {
             const el = document.getElementById('filterResultCount');
             if (!el) return;
-            el.textContent = `筛选结果：${orderCount || 0}单`;
+            if (orderCount === 'loading') {
+                el.textContent = '筛选结果：统计中…';
+                return;
+            }
+            if (orderCount === null || orderCount === undefined) {
+                el.textContent = '筛选结果：—';
+                return;
+            }
+            el.textContent = `筛选结果：${orderCount}单`;
+            lastFilterTotalCount = Number(orderCount);
+        }
+
+        function buildOrderExportRows(pendingIds) {
+            const isIdcard = currentOrderTriggerType === 'idcard';
+            const headers = isIdcard
+                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间']
+                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间'];
+            const rows = [];
+            pendingIds.forEach(pid => {
+                const od = orderDataMap.get(pid);
+                if (!od || !od.order) return;
+                const o = od.order;
+                const statusText = formatOrderAuditStatusText(o.audit_status);
+                rows.push(isIdcard
+                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]
+                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]);
+            });
+            return { isIdcard, headers, rows };
+        }
+
+        function warnIfExportIncomplete(exportedCount) {
+            if (lastFilterTotalCount == null || !Number.isFinite(lastFilterTotalCount)) return;
+            if (lastFilterTotalCount > exportedCount) {
+                alert('提示：筛选共 ' + lastFilterTotalCount + ' 单，本次导出 ' + exportedCount + ' 单，请检查筛选条件或联系管理员。');
+            }
         }
 
         function resetFilters() {
             setAuditFilters({
-                status: '', orderBizType: '', groupToken: '', pendingId: '', patientName: '', patientPhone: '', patientIdCard: '', groupName: '', storeId: '',
+                status: '', orderBizType: '', groupToken: '', pendingId: '', patientName: '', patientPhone: '', patientIdCard: '', groupName: '', userGroupNickname: '', storeId: '',
                 createDateStart: '', createDateEnd: '', requestTriggerType: currentOrderTriggerType
             });
             localStorage.removeItem(mcpAuditFiltersStorageKey(currentOrderTriggerType));
             selectedOrderPendingIds.clear();
             loadOrders();
+        }
+
+        function buildOrderAuditQueryString(filters) {
+            const qs = new URLSearchParams();
+            Object.entries(filters || {}).forEach(([k, v]) => {
+                if (v) qs.set(k, v);
+            });
+            return qs.toString();
         }
 
         function loadOrders() {
@@ -1272,11 +1513,19 @@
             const filters = getAuditFilters();
             localStorage.setItem(MCP_AUDIT_GROUP_TOKEN_KEY, filters.groupToken || '');
             localStorage.setItem(mcpAuditFiltersStorageKey(currentOrderTriggerType), JSON.stringify(filters));
-            const qs = new URLSearchParams();
-            Object.entries(filters).forEach(([k, v]) => {
-                if (v) qs.set(k, v);
-            });
-            const listUrl = `${BASE_URL}/mcp/order-audit-list` + (qs.toString() ? '?' + qs.toString() : '');
+            const qs = buildOrderAuditQueryString(filters);
+            const listUrl = `${BASE_URL}/mcp/order-audit-list` + (qs ? '?' + qs : '');
+            const countUrl = `${BASE_URL}/mcp/order-audit-count` + (qs ? '?' + qs : '');
+            updateFilterResultCount('loading');
+
+            fetch(countUrl, { method: 'GET', headers: { 'Accept': 'application/json' } })
+                .then(function (res) { return res.ok ? res.json() : null; })
+                .then(function (data) {
+                    if (data && data.code === 0) {
+                        updateFilterResultCount(data.totalCount);
+                    }
+                })
+                .catch(function () { /* 统计失败不阻塞列表 */ });
 
             fetch(listUrl, {
                 method: 'GET',
@@ -1289,7 +1538,7 @@
                 .then(data => {
                     document.getElementById('loading').style.display = 'none';
                     if (data && data.code === 0) {
-                        renderOrders(data.data || [], data.totalCount);
+                        renderOrders(data.data || []);
                     } else {
                         document.getElementById('orderList').innerHTML = 
                             '<tr><td colspan="16" class="text-center text-danger">加载失败：' + (data?.msg || '未知错误') + '</td></tr>';
@@ -1697,7 +1946,7 @@
                 })
                 .then(data => {
                     const options = data && data.code === 0 && Array.isArray(data.data) ? data.data : [];
-                    let html = '<option value="">全部</option>';
+                    let html = '<option value="">全部分词</option>';
                     options.forEach(item => {
                         const token = item && item.token ? String(item.token) : '';
                         if (!token) return;
@@ -1725,8 +1974,8 @@
                     } else {
                         selectEl.value = remembered;
                     }
-                    ['filterStatus', 'filterPendingId', 'filterPatientName', 'filterPatientPhone', 'filterPatientIdCard',
-                        'filterGroupName', 'filterStoreId', 'filterGroupToken', 'filterCreateDateStart', 'filterCreateDateEnd'
+                    ['filterStatus', 'filterOrderBizType', 'filterPendingId', 'filterPatientName', 'filterPatientPhone', 'filterPatientIdCard',
+                        'filterGroupName', 'filterUserGroupNickname', 'filterStoreId', 'filterGroupToken', 'filterCreateDateStart', 'filterCreateDateEnd'
                     ].forEach(id => {
                         const el = document.getElementById(id);
                         if (!el) return;
@@ -1738,20 +1987,84 @@
                 })
                 .catch(err => {
                     console.warn('加载群分词选项失败', err);
-                    selectEl.innerHTML = '<option value="">全部</option>';
+                    selectEl.innerHTML = '<option value="">全部分词</option>';
                     selectEl.onchange = () => loadOrders();
                 });
         }
 
-        function renderOrders(orders, totalCount) {
+        function mapApiOrderRowToLocal(order) {
+            const pendingId = order.pending_id || order.pendingId || '';
+            return {
+                id: order.id,
+                pending_id: pendingId,
+                order_id: order.order_id || order.orderId || '',
+                audit_status: order.audit_status !== undefined ? order.audit_status : (order.auditStatus !== undefined ? order.auditStatus : 0),
+                audit_time: order.audit_time || order.auditTime || null,
+                audit_remark: order.audit_remark || order.auditRemark || null,
+                create_time: order.create_time || order.createTime || '',
+                patient_name: order.patient_name || order.patientName || '',
+                patient_phone: order.patient_phone || order.patientPhone || '',
+                patient_id_card: order.patient_id_card || order.patientIdCard || '',
+                patient_education: order.patient_education || order.patientEducation || '',
+                group_name: order.group_name || order.groupName || '',
+                store_ids: order.store_ids || order.storeIds || '',
+                request_trigger_type: order.request_trigger_type || order.requestTriggerType || '',
+                order_remark: order.order_remark || order.orderRemark || '',
+                user_group_nickname: order.user_group_nickname || order.userGroupNickname || '',
+                delivery_hospital: order.delivery_hospital || order.deliveryHospital || '',
+                y3_image_info: order.y3_image_info || order.y3ImageInfo || '',
+                manual_audit_create: !!(order.manual_audit_create || order.manualAuditCreate),
+                order_biz_type: order.order_biz_type || order.orderBizType || '',
+                order_biz_type_label: order.order_biz_type_label || order.orderBizTypeLabel || formatOrderBizTypeLabel(order.order_biz_type || order.orderBizType),
+                delivery_date: order.delivery_date || order.deliveryDate || '',
+                delivery_time: order.delivery_time || order.deliveryTime || '',
+                mini_status_callback: order.mini_status_callback || order.miniStatusCallback || null,
+                mini_status_callback_at: order.mini_status_callback_at || order.miniStatusCallbackAt || '',
+                mini_status_callback_history: order.mini_status_callback_history || order.miniStatusCallbackHistory || null,
+                has_mini_status_callback: !!(order.has_mini_status_callback || order.mini_status_callback || order.miniStatusCallback)
+            };
+        }
+
+        function appendDrugsFromApiOrder(order, drugs) {
+            const pushDrug = function (raw) {
+                const drugNameRaw = raw.drug_name || raw.drugName || raw.name;
+                const drugName = (drugNameRaw === null || drugNameRaw === undefined) ? '' : String(drugNameRaw).trim();
+                const hasEffectiveDrugName = !!drugName && drugName !== '-' && drugName.toLowerCase() !== 'null';
+                if (!hasEffectiveDrugName) return;
+                drugs.push({
+                    name: drugName,
+                    spec: raw.spec || '',
+                    qty: raw.qty || 1,
+                    ware_id: raw.ware_id || raw.wareId || '',
+                    bar_code: raw.bar_code || raw.barCode || ''
+                });
+            };
+            if (Array.isArray(order.items) && order.items.length > 0) {
+                order.items.forEach(pushDrug);
+                return;
+            }
+            pushDrug(order);
+        }
+
+        function mergeOrderDetailFromApi(apiOrder) {
+            const pendingId = apiOrder.pending_id || apiOrder.pendingId || '';
+            if (!pendingId) return;
+            const drugs = [];
+            appendDrugsFromApiOrder(apiOrder, drugs);
+            orderDataMap.set(pendingId, {
+                order: mapApiOrderRowToLocal(apiOrder),
+                drugs: drugs
+            });
+        }
+
+        function renderOrders(orders) {
             const container = document.getElementById('orderList');
             if (!orders || orders.length === 0) {
                 container.innerHTML = '<tr><td colspan="16" class="text-center text-muted">暂无数据</td></tr>';
-                updateFilterResultCount(totalCount || 0);
                 return;
             }
 
-            // 按pending_id分组
+            // 按 pending_id 分组（兼容旧版一行一药；新版为每单一条 + items[]）
             const orderMap = new Map();
             orders.forEach(order => {
                 const pendingId = order.pending_id || order.pendingId || '';
@@ -1759,49 +2072,22 @@
                 
                 if (!orderMap.has(pendingId)) {
                     orderMap.set(pendingId, {
-                        order: {
-                            id: order.id,
-                            pending_id: pendingId,
-                            order_id: order.order_id || order.orderId || '',
-                            audit_status: order.audit_status !== undefined ? order.audit_status : (order.auditStatus !== undefined ? order.auditStatus : 0),
-                            audit_time: order.audit_time || order.auditTime || null,
-                            audit_remark: order.audit_remark || order.auditRemark || null,
-                            create_time: order.create_time || order.createTime || '',
-                            patient_name: order.patient_name || order.patientName || '',
-                            patient_phone: order.patient_phone || order.patientPhone || '',
-                            patient_id_card: order.patient_id_card || order.patientIdCard || '',
-                            patient_education: order.patient_education || order.patientEducation || '',
-                            group_name: order.group_name || order.groupName || '',
-                            store_ids: order.store_ids || order.storeIds || '',
-                            request_trigger_type: order.request_trigger_type || order.requestTriggerType || '',
-                            order_remark: order.order_remark || order.orderRemark || '',
-                            user_group_nickname: order.user_group_nickname || order.userGroupNickname || '',
-                            delivery_hospital: order.delivery_hospital || order.deliveryHospital || '',
-                            y3_image_info: order.y3_image_info || order.y3ImageInfo || '',
-                            manual_audit_create: !!(order.manual_audit_create || order.manualAuditCreate),
-                            order_biz_type: order.order_biz_type || order.orderBizType || '',
-                            order_biz_type_label: order.order_biz_type_label || order.orderBizTypeLabel || formatOrderBizTypeLabel(order.order_biz_type || order.orderBizType),
-                            delivery_date: order.delivery_date || order.deliveryDate || ''
-                        },
+                        order: mapApiOrderRowToLocal(order),
                         drugs: []
                     });
                 } else if (order.manual_audit_create || order.manualAuditCreate) {
                     orderMap.get(pendingId).order.manual_audit_create = true;
                 }
-                
-                const drugNameRaw = order.drug_name || order.drugName;
-                const drugName = (drugNameRaw === null || drugNameRaw === undefined) ? '' : String(drugNameRaw).trim();
-                // 兼容后端/数据源把空药品名写成 "-" / "null" 等占位值：视为无药品
-                const hasEffectiveDrugName = !!drugName && drugName !== '-' && drugName.toLowerCase() !== 'null';
-                if (hasEffectiveDrugName) {
-                    orderMap.get(pendingId).drugs.push({
-                        name: drugName,
-                        spec: order.spec || '',
-                        qty: order.qty || 1,
-                        ware_id: order.ware_id || order.wareId || '',
-                        bar_code: order.bar_code || order.barCode || ''
-                    });
+                const entry = orderMap.get(pendingId);
+                if (order.mini_status_callback || order.miniStatusCallback) {
+                    entry.order.mini_status_callback = order.mini_status_callback || order.miniStatusCallback;
+                    entry.order.mini_status_callback_at = order.mini_status_callback_at || order.miniStatusCallbackAt || entry.order.mini_status_callback_at;
+                    entry.order.has_mini_status_callback = true;
+                    if (order.mini_status_callback_history || order.miniStatusCallbackHistory) {
+                        entry.order.mini_status_callback_history = order.mini_status_callback_history || order.miniStatusCallbackHistory;
+                    }
                 }
+                appendDrugsFromApiOrder(order, entry.drugs);
             });
 
             // 保存到全局变量
@@ -1888,9 +2174,11 @@
                         </td>
                         <td class="text-nowrap">
                             ${auditStatus === 4 ? '<span class="text-muted small">已作废</span>' : (
-                                (canStore
-                                    ? `<button type="button" class="btn btn-sm btn-secondary me-1" onclick="openEditModal('${pendingId}')">编辑</button>`
-                                    : `<button type="button" class="btn btn-sm btn-secondary me-1" disabled title="当前登录门店不在群名称后缀门店列表中">编辑</button>`)
+                                (Number(auditStatus) === 1
+                                    ? `<button type="button" class="btn btn-sm btn-outline-primary me-1" onclick="openOrderDetailModal('${pendingId}')">订单详情</button>`
+                                    : (canStore
+                                        ? `<button type="button" class="btn btn-sm btn-secondary me-1" onclick="openEditModal('${pendingId}')">编辑</button>`
+                                        : `<button type="button" class="btn btn-sm btn-secondary me-1" disabled title="当前登录门店不在群名称后缀门店列表中">编辑</button>`))
                                 + (auditStatus === 0
                                     ? (canStore
                                         ? `<button type="button" class="btn btn-sm btn-primary me-1" onclick="submitOrder('${pendingId}')">下单</button>`
@@ -1941,8 +2229,6 @@
                 };
             }
             refreshSelectAllState();
-            const orderCount = Number.isFinite(totalCount) ? totalCount : orderMap.size;
-            updateFilterResultCount(orderCount);
             applyOrderTriggerVisibility();
             
             // 确保所有药品详情初始状态都是隐藏的
@@ -2054,6 +2340,252 @@
             } catch (e) {
                 return dateTimeStr;
             }
+        }
+
+
+        function formatMiniStatusCodeText(code) {
+            const c = Number(code);
+            if (c === 1) return '预下单';
+            if (c === 2) return '已领单';
+            if (c === 3) return '配送中';
+            if (c === 4) return '待上传凭证';
+            if (c === 5) return '完成';
+            if (c === 6) return '驳回';
+            if (c === 7) return '已退单';
+            return code != null && code !== '' ? String(code) : '';
+        }
+
+        function pickFirstNonEmpty() {
+            for (let i = 0; i < arguments.length; i++) {
+                const v = arguments[i];
+                if (v !== null && v !== undefined && String(v).trim() !== '') {
+                    return v;
+                }
+            }
+            return '';
+        }
+
+        function formatJsonForDetailDisplay(raw) {
+            if (raw === null || raw === undefined || raw === '') return '';
+            if (typeof raw === 'object') {
+                try { return JSON.stringify(raw, null, 2); } catch (e) { return String(raw); }
+            }
+            const s = String(raw).trim();
+            if (!s) return '';
+            if (s.startsWith('{') || s.startsWith('[')) {
+                try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return s; }
+            }
+            return s;
+        }
+
+        function detailDisplayValue(v) {
+            if (v === null || v === undefined) return '';
+            if (typeof v === 'object') {
+                try { return JSON.stringify(v, null, 2); } catch (e) { return String(v); }
+            }
+            return String(v).trim();
+        }
+
+        function renderDetailReadonlyField(label, value, opts) {
+            opts = opts || {};
+            const col = opts.col || 'col-12';
+            const display = opts.formatJson ? formatJsonForDetailDisplay(value) : detailDisplayValue(value);
+            const show = display === '' ? '-' : display;
+            const safeLabel = escapeHtml(label);
+            const safeShow = escapeHtml(show);
+            if (opts.textarea || (show !== '-' && show.length > 80)) {
+                const rows = opts.rows || (show.length > 200 ? 5 : 3);
+                return '<div class="mb-3 ' + col + '"><label class="form-label">' + safeLabel +
+                    '</label><textarea class="form-control" rows="' + rows +
+                    '" readonly>' + safeShow + '</textarea></div>';
+            }
+            return '<div class="mb-3 ' + col + '"><label class="form-label">' + safeLabel +
+                '</label><input type="text" class="form-control" readonly value="' +
+                escapeHtml(show === '-' ? '' : show) + '"></div>';
+        }
+
+        function resolveMiniCallbackFields(order) {
+            const cb = (order.mini_status_callback && typeof order.mini_status_callback === 'object')
+                ? order.mini_status_callback : {};
+            const log = (cb.orderLog && typeof cb.orderLog === 'object') ? cb.orderLog : {};
+            const statusCode = pickFirstNonEmpty(cb.statusCode, cb.status_code, log.orderStatus);
+            let statusText = pickFirstNonEmpty(cb.status, cb.statusText, log.orderStatusText);
+            if (!statusText && statusCode !== '' && statusCode != null) {
+                statusText = formatMiniStatusCodeText(statusCode);
+            }
+            return {
+                cb: cb,
+                log: log,
+                statusCode: statusCode,
+                statusText: statusText,
+                deliveryTime: pickFirstNonEmpty(cb.deliveryTime, cb.delivery_time, order.delivery_time),
+                receiverName: pickFirstNonEmpty(cb.receiverName, cb.receiver_name, log.receiverName),
+                invoiceInfo: pickFirstNonEmpty(cb.invoiceInfo, cb.invoice_info),
+                callbackData: pickFirstNonEmpty(cb.callbackData, cb.callback_data),
+                completionImages: pickFirstNonEmpty(cb.completionImagesJson, cb.completion_images_json, log.completionImagesJson),
+                miniCallbackData: log.miniCallbackData,
+                statusUpdateTime: pickFirstNonEmpty(log.statusUpdateTime, order.mini_status_callback_at)
+            };
+        }
+
+        function buildOrderDetailDrugHtml(drugs) {
+            if (!drugs || drugs.length === 0) {
+                return '<p class="text-muted small mb-0">暂无药品信息</p>';
+            }
+            let html = '';
+            drugs.forEach(function (drug, index) {
+                html += '<div class="border rounded p-2 mb-2 bg-white">';
+                html += '<div class="small fw-semibold mb-2">药品 ' + (index + 1) + '</div>';
+                html += '<div class="row g-2">';
+                html += renderDetailReadonlyField('药品名称', drug.name, { col: 'col-md-6' });
+                html += renderDetailReadonlyField('规格', drug.spec, { col: 'col-md-6' });
+                html += renderDetailReadonlyField('数量', drug.qty, { col: 'col-md-4' });
+                html += renderDetailReadonlyField('商品ID', drug.ware_id, { col: 'col-md-4' });
+                html += renderDetailReadonlyField('条码', drug.bar_code, { col: 'col-md-4' });
+                html += '</div></div>';
+            });
+            return html;
+        }
+
+        function buildOrderDetailFormHtml(order, drugs) {
+            const mini = resolveMiniCallbackFields(order);
+            const bizLabel = order.order_biz_type_label || formatOrderBizTypeLabel(order.order_biz_type);
+            let html = '';
+
+            html += '<div class="order-detail-section-title">MCP 订单信息</div>';
+            html += '<div class="row g-0">';
+            html += renderDetailReadonlyField('订单号', order.pending_id || order.order_id, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('中台订单号', order.order_id, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('审核状态', formatOrderAuditStatusText(order.audit_status), { col: 'col-md-6' });
+            html += renderDetailReadonlyField('创建时间', formatDateTime(order.create_time), { col: 'col-md-6' });
+            html += renderDetailReadonlyField('手建订单', order.manual_audit_create ? '是' : '否', { col: 'col-md-6' });
+            html += renderDetailReadonlyField('患者姓名', order.patient_name, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('手机号', order.patient_phone, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('身份证', order.patient_id_card, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('群名称', order.group_name, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('门店号', order.store_ids, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('患教 / 用药说明', order.patient_education, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('群昵称', order.user_group_nickname, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('送货医院', order.delivery_hospital, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('业务状态', bizLabel, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('送货日期', order.delivery_date, { col: 'col-md-6' });
+            html += renderDetailReadonlyField('表A 送达时间', order.delivery_time, { col: 'col-md-6' });
+            if (order.audit_remark) {
+                html += renderDetailReadonlyField('审核备注', order.audit_remark, { col: 'col-12', textarea: true, rows: 2 });
+            }
+            html += renderDetailReadonlyField('下单备注', order.order_remark, { col: 'col-12', textarea: true, rows: 2 });
+            html += '</div>';
+
+            html += '<div class="order-detail-section-title mt-3">小程序状态回调</div>';
+            if (!order.mini_status_callback) {
+                html += '<p class="text-muted small">暂无回调数据，待小程序调用 core_order_status_update 回写。</p>';
+            } else {
+                html += '<div class="row g-0">';
+                html += renderDetailReadonlyField('最近回调时间', formatDateTime(order.mini_status_callback_at), { col: 'col-md-6' });
+                html += renderDetailReadonlyField('小程序订单状态码', mini.statusCode, { col: 'col-md-6' });
+                html += renderDetailReadonlyField('小程序订单状态', mini.statusText, { col: 'col-md-6' });
+                html += renderDetailReadonlyField('送达时间', mini.deliveryTime, { col: 'col-md-6' });
+                html += renderDetailReadonlyField('领单人', mini.receiverName, { col: 'col-md-6' });
+                html += renderDetailReadonlyField('状态更新时间（表B）', formatDateTime(mini.statusUpdateTime), { col: 'col-md-6' });
+                html += '</div>';
+                if (mini.invoiceInfo) {
+                    html += renderDetailReadonlyField('发票信息', mini.invoiceInfo, { formatJson: true, textarea: true, rows: 4 });
+                }
+                if (mini.callbackData) {
+                    html += renderDetailReadonlyField('业务扩展数据', mini.callbackData, { formatJson: true, textarea: true, rows: 4 });
+                }
+                if (mini.completionImages) {
+                    html += renderDetailReadonlyField('完成图片', mini.completionImages, { formatJson: true, textarea: true, rows: 3 });
+                }
+                if (mini.miniCallbackData) {
+                    html += renderDetailReadonlyField('表B mini_callback_data', mini.miniCallbackData, { formatJson: true, textarea: true, rows: 4 });
+                }
+            }
+
+            const log = mini.log;
+            if (log && Object.keys(log).length > 0) {
+                html += '<div class="order-detail-section-title mt-3">海典 order_log（表B）</div>';
+                html += '<div class="row g-0">';
+                html += renderDetailReadonlyField('订单状态', log.orderStatus, { col: 'col-md-4' });
+                html += renderDetailReadonlyField('状态说明', log.orderStatusText || formatMiniStatusCodeText(log.orderStatus), { col: 'col-md-4' });
+                html += renderDetailReadonlyField('订单状态更新时间', formatDateTime(log.statusUpdateTime), { col: 'col-md-4' });
+                if (log.receiverName && log.receiverName !== mini.receiverName) {
+                    html += renderDetailReadonlyField('领单人（表B）', log.receiverName, { col: 'col-md-6' });
+                }
+                html += '</div>';
+            }
+
+            const hist = order.mini_status_callback_history;
+            if (Array.isArray(hist) && hist.length > 0) {
+                html += '<div class="order-detail-section-title mt-3">回调历史（' + hist.length + ' 条）</div>';
+                html += renderDetailReadonlyField('历史记录', hist, { formatJson: true, textarea: true, rows: 6 });
+            }
+
+            html += '<div class="order-detail-section-title mt-3">药品信息</div>';
+            html += buildOrderDetailDrugHtml(drugs);
+            return html;
+        }
+
+        function openOrderDetailModal(pendingId) {
+            const alertEl = document.getElementById('orderDetailModalAlert');
+            const bodyEl = document.getElementById('orderDetailModalBody');
+            const titleEl = document.getElementById('orderDetailModalLabel');
+            const modalEl = document.getElementById('orderDetailModal');
+            if (titleEl) {
+                titleEl.textContent = '订单详情 - ' + pendingId;
+            }
+            if (alertEl) {
+                alertEl.textContent = '正在加载订单详情…';
+                alertEl.classList.remove('d-none');
+            }
+            if (bodyEl) {
+                bodyEl.innerHTML = '<p class="text-muted text-center py-4 mb-0">加载中…</p>';
+            }
+            if (modalEl && typeof bootstrap !== 'undefined') {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            }
+
+            const detailUrl = `${BASE_URL}/mcp/order-audit-detail?pendingId=${encodeURIComponent(pendingId)}`;
+            fetch(detailUrl, { method: 'GET', headers: { 'Accept': 'application/json' } })
+                .then(function (res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function (data) {
+                    if (!data || data.code !== 0 || !data.data) {
+                        throw new Error((data && data.msg) ? data.msg : '加载失败');
+                    }
+                    mergeOrderDetailFromApi(data.data);
+                    const od = orderDataMap.get(pendingId);
+                    if (!od) {
+                        throw new Error('订单数据不存在');
+                    }
+                    const order = od.order;
+                    const drugs = od.drugs || [];
+                    const auditText = formatOrderAuditStatusText(order.audit_status);
+                    const cbAt = order.mini_status_callback_at || '';
+                    if (alertEl) {
+                        let tip = 'MCP 审核状态：' + auditText;
+                        if (cbAt) {
+                            tip += '；最近小程序回调：' + formatDateTime(cbAt);
+                        } else if (!order.mini_status_callback) {
+                            tip += '；暂无小程序回调数据（待 core_order_status_update 回写）';
+                        }
+                        alertEl.textContent = tip;
+                    }
+                    if (bodyEl) {
+                        bodyEl.innerHTML = buildOrderDetailFormHtml(order, drugs);
+                    }
+                })
+                .catch(function (err) {
+                    if (alertEl) {
+                        alertEl.className = 'alert alert-danger py-2 small mb-3';
+                        alertEl.textContent = '加载失败：' + (err.message || '未知错误');
+                    }
+                    if (bodyEl) {
+                        bodyEl.innerHTML = '<p class="text-danger text-center py-3 mb-0">请关闭后重试</p>';
+                    }
+                });
         }
 
 

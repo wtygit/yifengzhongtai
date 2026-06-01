@@ -1320,6 +1320,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             out.put("y3ImageInfo", "");
             out.put("orderBizType", "");
             out.put("deliveryDate", "");
+            out.put("deliveryTime", "");
             out.put("items", new ArrayList<>());
             return out;
         }
@@ -1455,6 +1456,10 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 blankToNull(str(raw.get("deliveryDate"))),
                 blankToNull(getIgnoreCase(raw, "delivery_date")));
         out.put("deliveryDate", deliveryDate != null ? deliveryDate : "");
+        String deliveryTime = firstNonBlank(
+                blankToNull(str(raw.get("deliveryTime"))),
+                blankToNull(getIgnoreCase(raw, "delivery_time")));
+        out.put("deliveryTime", deliveryTime != null ? deliveryTime : "");
 
         List<Map<String, Object>> items = normalizeItemsList(raw.get("items"));
         if (items.isEmpty() && parsed != null && parsed.items != null) {
@@ -1490,7 +1495,27 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 || "mcp_order_audit_manual".equalsIgnoreCase(str(raw.get("orderCreateSource")))) {
             out.put("_manualAuditCreate", Boolean.TRUE);
         }
+        preserveMiniStatusCallbackFields(raw, out);
         return out;
+    }
+
+    /** 小程序 {@code core_order_status_update} 回调元数据：归一化时保留，供审核页「订单详情」展示 */
+    private static void preserveMiniStatusCallbackFields(Map<String, Object> raw, Map<String, Object> out) {
+        if (raw == null || out == null) {
+            return;
+        }
+        Object snap = raw.get("_miniStatusCallback");
+        if (snap != null) {
+            out.put("_miniStatusCallback", snap);
+        }
+        String at = str(raw.get("_miniStatusCallbackAt"));
+        if (StringUtils.hasText(at)) {
+            out.put("_miniStatusCallbackAt", at);
+        }
+        Object hist = raw.get("_miniStatusCallbackHistory");
+        if (hist instanceof List<?> list && !list.isEmpty()) {
+            out.put("_miniStatusCallbackHistory", hist);
+        }
     }
 
     private String extractStoreIdForGate(Map<String, Object> normalizedRequest, String groupNameFallback) {
@@ -1591,10 +1616,13 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         if (!StringUtils.hasText(str(normalized.get("deliveryDate")))) {
             normalized.put("deliveryDate", str(existingNorm.get("deliveryDate")));
         }
+        if (!StringUtils.hasText(str(normalized.get("deliveryTime")))) {
+            normalized.put("deliveryTime", str(existingNorm.get("deliveryTime")));
+        }
         // 不在此合并 items：空数组可能表示用户有意清空药品，合并会误恢复旧明细
     }
 
-    /** 业务状态码：1 预下单（卖品），2 寄存，3 赠药 */
+    /** 业务状态码：1 预下单（卖品），2 寄存，3 赠药，4 服务 */
     private static String normalizeOrderBizTypeCode(String raw) {
         if (!StringUtils.hasText(raw)) {
             return "";
@@ -1609,6 +1637,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         if ("3".equals(t) || "赠药".equals(t)) {
             return "3";
         }
+        if ("4".equals(t) || "服务".equals(t)) {
+            return "4";
+        }
         return t;
     }
 
@@ -1620,6 +1651,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             case "1" -> "预下单（卖品）";
             case "2" -> "寄存";
             case "3" -> "赠药";
+            case "4" -> "服务";
             default -> code.trim();
         };
     }
@@ -2580,17 +2612,52 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         return StringUtils.hasText(groupName) && groupName.contains(tokenQ);
     }
 
+    /**
+     * 页面用户主动设置的筛选（不含 Tab 默认的 phone/idcard 触发类型）。
+     */
+    private boolean hasAnyOrderAuditUserFilter(String status, String groupToken,
+                                               String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
+                                               String userGroupNickname, String storeId,
+                                               String createDateStart, String createDateEnd,
+                                               String createTimeStart, String createTimeEnd,
+                                               String orderBizType) {
+        return StringUtils.hasText(status)
+                || StringUtils.hasText(groupToken)
+                || StringUtils.hasText(pendingId)
+                || StringUtils.hasText(patientName)
+                || StringUtils.hasText(patientPhone)
+                || StringUtils.hasText(patientIdCard)
+                || StringUtils.hasText(groupName)
+                || StringUtils.hasText(userGroupNickname)
+                || StringUtils.hasText(storeId)
+                || StringUtils.hasText(createDateStart)
+                || StringUtils.hasText(createDateEnd)
+                || StringUtils.hasText(createTimeStart)
+                || StringUtils.hasText(createTimeEnd)
+                || StringUtils.hasText(orderBizType);
+    }
+
     @Override
     public Map<String, Object> getOrderAuditList(String status, String groupToken,
                                                  String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
-                                                 String storeId,
+                                                 String userGroupNickname, String storeId,
                                                  String createDateStart, String createDateEnd,
                                                  String createTimeStart, String createTimeEnd,
-                                                 String requestTriggerType, String orderBizType) {
+                                                 String requestTriggerType, String orderBizType,
+                                                 boolean forExport) {
         Map<String, Object> result = new HashMap<>();
         if (haidianJdbcTemplate == null) {
             result.put("code", 500);
             result.put("msg", "海典同步库未初始化");
+            result.put("data", new java.util.ArrayList<>());
+            return result;
+        }
+
+        boolean hasUserFilter = hasAnyOrderAuditUserFilter(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName,
+                userGroupNickname, storeId, createDateStart, createDateEnd, createTimeStart, createTimeEnd, orderBizType);
+        if (forExport && !hasUserFilter) {
+            result.put("code", 400);
+            result.put("msg", "导出筛选结果需至少设置一项筛选条件（如状态、日期、订单号等）");
             result.put("data", new java.util.ArrayList<>());
             return result;
         }
@@ -2643,21 +2710,27 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             }
             String tokenQ = sanitizeGroupTokenForSearch(groupToken);
 
-            // 全量统计：返回“筛选后总单数”，不受页面列表 LIMIT 影响
-            int totalCountFull = computeOrderAuditTotalCountFull(status, tokenQ, pendingId, patientName, patientPhone, patientIdCard, groupName,
-                    storeId, createFrom, createTo, requestTriggerType, orderBizType);
+            // 全量统计改由 GET /mcp/order-audit-count 异步拉取，避免阻塞列表首屏（见 getOrderAuditCount）
 
-            // 列表查询：若存在姓名/手机号/身份证/群名称/分词等筛选，放大 SQL 取数窗口，
-            // 避免“先 LIMIT 再内存过滤”导致“筛选结果有值但列表空白”。
+            // 列表查询：若存在 JSON 内存过滤或创建时间范围，放大 SQL 取数窗口，
+            // 避免“先 LIMIT 再内存过滤”导致“统计有 351 单、列表/导出只有 100 单”。
             boolean hasDeepFilter = StringUtils.hasText(tokenQ)
                     || StringUtils.hasText(patientName)
                     || StringUtils.hasText(patientPhone)
                     || StringUtils.hasText(patientIdCard)
                     || StringUtils.hasText(groupName)
+                    || StringUtils.hasText(userGroupNickname)
                     || StringUtils.hasText(storeId)
                     || StringUtils.hasText(orderBizType);
-            sql += " ORDER BY create_time DESC LIMIT ?";
-            params.add(hasDeepFilter ? 5000 : 100);
+            boolean needsWideFetch = hasDeepFilter || createFrom != null || createTo != null;
+            final int orderAuditListMax = 5000;
+            if (forExport && hasUserFilter) {
+                // 导出：有任意用户筛选时不加 LIMIT，与 order-audit-count 全量一致
+                sql += " ORDER BY create_time DESC";
+            } else {
+                sql += " ORDER BY create_time DESC LIMIT ?";
+                params.add(needsWideFetch ? orderAuditListMax : 100);
+            }
 
             List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(sql, params.toArray());
             java.util.List<Map<String, Object>> orderList = new java.util.ArrayList<>();
@@ -2685,7 +2758,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     if (!matchesTextFilter(reqPatientName, patientName)
                             || !matchesTextFilter(reqPatientPhone, patientPhone)
                             || !matchesTextFilter(reqPatientIdCard, patientIdCard)
-                            || !matchesTextFilter(reqGroupName, groupName)) {
+                            || !matchesTextFilter(reqGroupName, groupName)
+                            || !matchesTextFilter(str(requestData.get("userGroupNickname")), userGroupNickname)) {
                         continue;
                     }
                     if (!matchesOrderTriggerType(requestData, requestTriggerType)) {
@@ -2719,76 +2793,15 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     String reqOrderBizType = str(requestData.get("orderBizType"));
                     String reqOrderBizTypeLabel = formatOrderBizTypeLabel(reqOrderBizType);
                     String reqDeliveryDate = str(requestData.get("deliveryDate"));
+                    String reqDeliveryTime = str(requestData.get("deliveryTime"));
 
-                    // 提取 items：有药品则一行一药；无药品也至少返回一行便于展示患者信息
-                    Object itemsObj = requestData.get("items");
-                    if (itemsObj instanceof List<?> rawItems && !rawItems.isEmpty()) {
-                        @SuppressWarnings("unchecked")
-                        List<Map<String, Object>> items = (List<Map<String, Object>>) itemsObj;
-                        for (Map<String, Object> item : items) {
-                            Map<String, Object> orderItem = new LinkedHashMap<>();
-                            orderItem.put("id", row.get("id"));
-                            orderItem.put("pending_id", row.get("pending_id"));
-                            orderItem.put("order_id", row.get("order_id"));
-                            orderItem.put("request_source", row.get("request_source"));
-                            orderItem.put("audit_status", row.get("audit_status"));
-                            orderItem.put("audit_time", row.get("audit_time"));
-                            orderItem.put("audit_remark", row.get("audit_remark"));
-                            orderItem.put("create_time", row.get("create_time"));
-                            orderItem.put("patient_name", patientNameValue);
-                            orderItem.put("patient_phone", patientPhoneValue);
-                            orderItem.put("patient_id_card", patientIdCardValue);
-                            orderItem.put("patient_education", patientEducation);
-                            orderItem.put("group_name", reqGroupNameRaw);
-                            orderItem.put("store_ids", reqStoreIds);
-                            orderItem.put("request_trigger_type", reqTriggerType);
-                            orderItem.put("order_remark", reqOrderRemark);
-                            orderItem.put("user_group_nickname", reqGroupNickname);
-                            orderItem.put("delivery_hospital", reqDeliveryHospital);
-                            orderItem.put("y3_image_info", reqY3ImageInfo);
-                            orderItem.put("group_tokens", requestData.get("groupTokens"));
-                            orderItem.put("manual_audit_create", manualAuditCreate);
-                            orderItem.put("order_biz_type", reqOrderBizType);
-                            orderItem.put("order_biz_type_label", reqOrderBizTypeLabel);
-                            orderItem.put("delivery_date", reqDeliveryDate);
-                            orderItem.put("drug_name", item.get("drugName"));
-                            orderItem.put("spec", item.get("spec"));
-                            orderItem.put("qty", item.get("qty"));
-                            orderItem.put("ware_id", item.get("wareId"));
-                            orderItem.put("bar_code", item.get("barCode"));
-                            orderList.add(orderItem);
-                        }
-                    } else {
-                        Map<String, Object> orderItem = new LinkedHashMap<>();
-                        orderItem.put("id", row.get("id"));
-                        orderItem.put("pending_id", row.get("pending_id"));
-                        orderItem.put("order_id", row.get("order_id"));
-                        orderItem.put("request_source", row.get("request_source"));
-                        orderItem.put("audit_status", row.get("audit_status"));
-                        orderItem.put("audit_time", row.get("audit_time"));
-                        orderItem.put("audit_remark", row.get("audit_remark"));
-                        orderItem.put("create_time", row.get("create_time"));
-                        orderItem.put("patient_name", patientNameValue);
-                        orderItem.put("patient_phone", patientPhoneValue);
-                        orderItem.put("patient_id_card", patientIdCardValue);
-                        orderItem.put("patient_education", patientEducation);
-                        orderItem.put("group_name", reqGroupNameRaw);
-                        orderItem.put("store_ids", reqStoreIds);
-                        orderItem.put("request_trigger_type", reqTriggerType);
-                        orderItem.put("order_remark", reqOrderRemark);
-                        orderItem.put("user_group_nickname", reqGroupNickname);
-                        orderItem.put("delivery_hospital", reqDeliveryHospital);
-                        orderItem.put("y3_image_info", reqY3ImageInfo);
-                        orderItem.put("group_tokens", requestData.get("groupTokens"));
-                        orderItem.put("manual_audit_create", manualAuditCreate);
-                        orderItem.put("order_biz_type", reqOrderBizType);
-                        orderItem.put("order_biz_type_label", reqOrderBizTypeLabel);
-                        orderItem.put("delivery_date", reqDeliveryDate);
-                        orderList.add(orderItem);
-                    }
-                    if (tokenQ != null && orderList.size() >= 100) {
-                        break;
-                    }
+                    Map<String, Object> orderItem = buildOrderAuditListHeader(row, patientNameValue, patientPhoneValue,
+                            patientIdCardValue, patientEducation, reqGroupNameRaw, reqStoreIds, reqTriggerType,
+                            reqOrderRemark, reqGroupNickname, reqDeliveryHospital, reqY3ImageInfo, manualAuditCreate,
+                            reqOrderBizType, reqOrderBizTypeLabel, reqDeliveryDate, reqDeliveryTime);
+                    orderItem.put("items", buildOrderAuditDrugItems(requestData.get("items")));
+                    putMiniStatusCallbackListFieldsLite(orderItem, requestData);
+                    orderList.add(orderItem);
                 } catch (Exception e) {
                     log.warn("解析订单JSON失败，id={}", row.get("id"), e);
                     // 即使解析失败，也返回基本信息
@@ -2801,18 +2814,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 }
             }
 
-            java.util.Set<String> uniqPending = new java.util.HashSet<>();
-            for (Map<String, Object> o : orderList) {
-                String pid = str(o.get("pending_id"));
-                if (StringUtils.hasText(pid)) {
-                    uniqPending.add(pid);
-                }
-            }
             result.put("code", 0);
             result.put("msg", "ok");
             result.put("data", orderList);
-            // totalCount：全量统计的“单数”，用于页面右上角展示；uniqPending 仅是当前返回行的去重
-            result.put("totalCount", totalCountFull);
             result.put("totalRows", orderList.size());
             return result;
         } catch (Exception e) {
@@ -2822,6 +2826,180 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             result.put("data", new java.util.ArrayList<>());
             return result;
         }
+    }
+
+    @Override
+    public Map<String, Object> getOrderAuditCount(String status, String groupToken,
+                                                  String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
+                                                  String userGroupNickname, String storeId,
+                                                  String createDateStart, String createDateEnd,
+                                                  String createTimeStart, String createTimeEnd,
+                                                  String requestTriggerType, String orderBizType) {
+        Map<String, Object> result = new HashMap<>();
+        if (haidianJdbcTemplate == null) {
+            result.put("code", 500);
+            result.put("msg", "海典同步库未初始化");
+            result.put("totalCount", 0);
+            return result;
+        }
+        try {
+            String tokenQ = sanitizeGroupTokenForSearch(groupToken);
+            LocalDateTime createFrom = parseFlexibleDateTimeStart(createTimeStart, createDateStart);
+            LocalDateTime createTo = parseFlexibleDateTimeEnd(createTimeEnd, createDateEnd);
+            int totalCountFull = computeOrderAuditTotalCountFull(status, tokenQ, pendingId, patientName, patientPhone, patientIdCard, groupName,
+                    userGroupNickname, storeId, createFrom, createTo, requestTriggerType, orderBizType);
+            result.put("code", 0);
+            result.put("msg", "ok");
+            result.put("totalCount", totalCountFull);
+            return result;
+        } catch (Exception e) {
+            log.error("获取订单审核统计失败", e);
+            result.put("code", 500);
+            result.put("msg", "统计失败：" + e.getMessage());
+            result.put("totalCount", 0);
+            return result;
+        }
+    }
+
+    @Override
+    public Map<String, Object> getOrderAuditDetail(String pendingId) {
+        Map<String, Object> result = new HashMap<>();
+        if (!StringUtils.hasText(pendingId)) {
+            result.put("code", 400);
+            result.put("msg", "pendingId 不能为空");
+            return result;
+        }
+        if (haidianJdbcTemplate == null) {
+            result.put("code", 500);
+            result.put("msg", "海典同步库未初始化");
+            return result;
+        }
+        try {
+            List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(
+                    """
+                            SELECT id, pending_id, order_id, request_source, audit_status, audit_time, audit_remark, create_time,
+                                   user_request_data
+                            FROM mcp_order_create_request_log
+                            WHERE pending_id = ?
+                            LIMIT 1
+                            """,
+                    pendingId.trim());
+            if (rows.isEmpty()) {
+                result.put("code", 404);
+                result.put("msg", "订单不存在");
+                return result;
+            }
+            Map<String, Object> row = rows.get(0);
+            String userRequestDataJson = row.get("user_request_data") == null ? null : String.valueOf(row.get("user_request_data"));
+            if (!StringUtils.hasText(userRequestDataJson)) {
+                result.put("code", 404);
+                result.put("msg", "订单数据为空");
+                return result;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> requestData = objectMapper.readValue(userRequestDataJson, Map.class);
+            requestData = normalizeUserRequestDataMap(requestData);
+            enrichMiniCallbackFromOrderLogIfMissing(requestData, pendingId.trim());
+
+            String patientNameValue = str(requestData.get("patientName"));
+            String patientPhoneValue = str(requestData.get("patientPhone"));
+            String patientIdCardValue = str(requestData.get("patientIdCard"));
+            String patientEducation = str(requestData.get("patientEducation"));
+            String reqGroupNameRaw = str(requestData.get("groupName"));
+            String reqStoreId = extractStoreIdForGate(requestData, reqGroupNameRaw);
+            String reqStoreIds = StringUtils.hasText(reqStoreId) ? reqStoreId : storeIdsCsvFromGroupNameSuffix(reqGroupNameRaw);
+            String reqTriggerType = str(requestData.get("requestTriggerType"));
+            String reqOrderRemark = str(requestData.get("orderRemark"));
+            String reqGroupNickname = str(requestData.get("userGroupNickname"));
+            String reqDeliveryHospital = str(requestData.get("deliveryHospital"));
+            String reqY3ImageInfo = str(requestData.get("y3ImageInfo"));
+            boolean manualAuditCreate = Boolean.TRUE.equals(requestData.get("_manualAuditCreate"));
+            String reqOrderBizType = str(requestData.get("orderBizType"));
+            String reqOrderBizTypeLabel = formatOrderBizTypeLabel(reqOrderBizType);
+            String reqDeliveryDate = str(requestData.get("deliveryDate"));
+            String reqDeliveryTime = str(requestData.get("deliveryTime"));
+
+            Map<String, Object> orderItem = buildOrderAuditListHeader(row, patientNameValue, patientPhoneValue,
+                    patientIdCardValue, patientEducation, reqGroupNameRaw, reqStoreIds, reqTriggerType,
+                    reqOrderRemark, reqGroupNickname, reqDeliveryHospital, reqY3ImageInfo, manualAuditCreate,
+                    reqOrderBizType, reqOrderBizTypeLabel, reqDeliveryDate, reqDeliveryTime);
+            orderItem.put("items", buildOrderAuditDrugItems(requestData.get("items")));
+            putMiniStatusCallbackListFields(orderItem, requestData);
+
+            result.put("code", 0);
+            result.put("msg", "ok");
+            result.put("data", orderItem);
+            return result;
+        } catch (Exception e) {
+            log.error("获取订单详情失败 pendingId={}", pendingId, e);
+            result.put("code", 500);
+            result.put("msg", "获取订单详情失败：" + e.getMessage());
+            return result;
+        }
+    }
+
+    private Map<String, Object> buildOrderAuditListHeader(Map<String, Object> row,
+                                                          String patientNameValue, String patientPhoneValue,
+                                                          String patientIdCardValue, String patientEducation,
+                                                          String reqGroupNameRaw, String reqStoreIds, String reqTriggerType,
+                                                          String reqOrderRemark, String reqGroupNickname,
+                                                          String reqDeliveryHospital, String reqY3ImageInfo,
+                                                          boolean manualAuditCreate,
+                                                          String reqOrderBizType, String reqOrderBizTypeLabel,
+                                                          String reqDeliveryDate, String reqDeliveryTime) {
+        Map<String, Object> orderItem = new LinkedHashMap<>();
+        orderItem.put("id", row.get("id"));
+        orderItem.put("pending_id", row.get("pending_id"));
+        orderItem.put("order_id", row.get("order_id"));
+        orderItem.put("request_source", row.get("request_source"));
+        orderItem.put("audit_status", row.get("audit_status"));
+        orderItem.put("audit_time", row.get("audit_time"));
+        orderItem.put("audit_remark", row.get("audit_remark"));
+        orderItem.put("create_time", row.get("create_time"));
+        orderItem.put("patient_name", patientNameValue);
+        orderItem.put("patient_phone", patientPhoneValue);
+        orderItem.put("patient_id_card", patientIdCardValue);
+        orderItem.put("patient_education", patientEducation);
+        orderItem.put("group_name", reqGroupNameRaw);
+        orderItem.put("store_ids", reqStoreIds);
+        orderItem.put("request_trigger_type", reqTriggerType);
+        orderItem.put("order_remark", reqOrderRemark);
+        orderItem.put("user_group_nickname", reqGroupNickname);
+        orderItem.put("delivery_hospital", reqDeliveryHospital);
+        orderItem.put("y3_image_info", reqY3ImageInfo);
+        orderItem.put("manual_audit_create", manualAuditCreate);
+        orderItem.put("order_biz_type", reqOrderBizType);
+        orderItem.put("order_biz_type_label", reqOrderBizTypeLabel);
+        orderItem.put("delivery_date", reqDeliveryDate);
+        orderItem.put("delivery_time", reqDeliveryTime);
+        return orderItem;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> buildOrderAuditDrugItems(Object itemsObj) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        if (!(itemsObj instanceof List<?> rawItems) || rawItems.isEmpty()) {
+            return items;
+        }
+        for (Object o : rawItems) {
+            if (!(o instanceof Map<?, ?> rawItem)) {
+                continue;
+            }
+            Map<String, Object> item = (Map<String, Object>) rawItem;
+            String drugName = str(item.get("drugName"));
+            if (!StringUtils.hasText(drugName) || "-".equals(drugName.trim())
+                    || "null".equalsIgnoreCase(drugName.trim())) {
+                continue;
+            }
+            Map<String, Object> drug = new LinkedHashMap<>();
+            drug.put("drug_name", drugName.trim());
+            drug.put("spec", item.get("spec"));
+            drug.put("qty", item.get("qty"));
+            drug.put("ware_id", item.get("wareId"));
+            drug.put("bar_code", item.get("barCode"));
+            items.add(drug);
+        }
+        return items;
     }
 
     // 移除列表页补齐查询：患者信息应在 core_order_create 接入阶段补齐并保存到 user_request_data。
@@ -2835,7 +3013,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
      */
     private int computeOrderAuditTotalCountFull(String status, String tokenQ,
                                                 String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
-                                                String storeId,
+                                                String userGroupNickname, String storeId,
                                                 LocalDateTime createFrom, LocalDateTime createTo,
                                                 String requestTriggerType, String orderBizType) {
         if (haidianJdbcTemplate == null) {
@@ -2849,6 +3027,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         || StringUtils.hasText(patientPhone)
                         || StringUtils.hasText(patientIdCard)
                         || StringUtils.hasText(groupName)
+                        || StringUtils.hasText(userGroupNickname)
                         || StringUtils.hasText(storeId)
                         || StringUtils.hasText(orderBizType);
         boolean hasJsonFilters = hasJsonFiltersExceptTrigger || StringUtils.hasText(triggerNorm);
@@ -3011,7 +3190,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     if (!matchesTextFilter(reqPatientName, patientName)
                             || !matchesTextFilter(reqPatientPhone, patientPhone)
                             || !matchesTextFilter(reqPatientIdCard, patientIdCard)
-                            || !matchesTextFilter(reqGroupName, groupName)) {
+                            || !matchesTextFilter(reqGroupName, groupName)
+                            || !matchesTextFilter(str(requestData.get("userGroupNickname")), userGroupNickname)) {
                         continue;
                     }
                     if (!matchesOrderTriggerType(requestData, requestTriggerType)) {
@@ -3050,7 +3230,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             r.put("data", List.of());
             return r;
         }
-        return getOrderAuditList("0", groupToken, null, null, null, null, null, null, null, null, null, null, null, null);
+        return getOrderAuditList("0", groupToken, null, null, null, null, null, null, null, null, null, null, null, null, null, false);
     }
 
     private static boolean matchesTextFilter(String source, String keyword) {
@@ -3662,16 +3842,43 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
     }
 
     @Override
-    public Map<String, Object> updateOrderStatus(String orderId, String pendingId, Integer statusCode, String status,
-                                                 String invoiceInfo, String callbackData, String receiverName, String completionImagesJson) {
+    public Map<String, Object> updateOrderStatus(Map<String, Object> callbackRequest) {
         Map<String, Object> result = new HashMap<>();
-        String oid = orderId == null ? "" : orderId.trim();
-        String pid = pendingId == null ? "" : pendingId.trim();
-        String st = status == null ? "" : status.trim();
-        String inv = invoiceInfo == null ? null : invoiceInfo.trim();
-        String cb = callbackData == null ? null : callbackData.trim();
-        String rn = receiverName == null ? null : receiverName.trim();
-        String ci = completionImagesJson == null ? null : completionImagesJson.trim();
+        if (callbackRequest == null) {
+            callbackRequest = Map.of();
+        }
+        String oid = str(callbackRequest.get("orderId"));
+        if (!StringUtils.hasText(oid)) {
+            oid = str(callbackRequest.get("order_id"));
+        }
+        String pid = str(callbackRequest.get("pendingId"));
+        if (!StringUtils.hasText(pid)) {
+            pid = str(callbackRequest.get("pending_id"));
+        }
+        Integer statusCode = callbackRequest.get("statusCode") instanceof Number n
+                ? n.intValue()
+                : parseIntOrNull(str(callbackRequest.get("statusCode")));
+        String st = str(callbackRequest.get("status"));
+        String inv = str(callbackRequest.get("invoiceInfo"));
+        if (!StringUtils.hasText(inv)) {
+            inv = str(callbackRequest.get("invoice_info"));
+        }
+        String cb = str(callbackRequest.get("callbackData"));
+        if (!StringUtils.hasText(cb)) {
+            cb = str(callbackRequest.get("callback_data"));
+        }
+        String rn = str(callbackRequest.get("receiverName"));
+        if (!StringUtils.hasText(rn)) {
+            rn = str(callbackRequest.get("receiver_name"));
+        }
+        String ci = str(callbackRequest.get("completionImagesJson"));
+        if (!StringUtils.hasText(ci)) {
+            ci = str(callbackRequest.get("completion_images_json"));
+        }
+        String deliveryTime = str(callbackRequest.get("deliveryTime"));
+        if (!StringUtils.hasText(deliveryTime)) {
+            deliveryTime = str(callbackRequest.get("delivery_time"));
+        }
 
         if (!StringUtils.hasText(oid) && !StringUtils.hasText(pid)) {
             result.put("code", 400);
@@ -3681,10 +3888,18 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         }
 
         Integer code = normalizeOrderStatusCode(statusCode, st);
-        if (code == null) {
+        boolean hasStatus = code != null;
+        boolean hasDeliveryTime = StringUtils.hasText(deliveryTime);
+        boolean hasCallbackFields = hasDeliveryTime
+                || StringUtils.hasText(inv)
+                || StringUtils.hasText(cb)
+                || StringUtils.hasText(rn)
+                || StringUtils.hasText(ci)
+                || hasStatus;
+        if (!hasCallbackFields) {
             result.put("code", 400);
-            result.put("msg", "statusCode 仅支持：1预下单 2已领单 3配送中 4待上传凭证 5完成 6驳回 7已退单（也可用 status 传中文）");
-            result.put("data", Map.of("statusCode", statusCode, "status", st));
+            result.put("msg", "statusCode、deliveryTime 或其它回调字段至少传一个");
+            result.put("data", Map.of("statusCode", statusCode, "status", st, "deliveryTime", deliveryTime));
             return result;
         }
         if (haidianJdbcTemplate == null) {
@@ -3694,56 +3909,366 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             return result;
         }
 
-        java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
-        int updated;
-        String callbackJson = null;
-        if (StringUtils.hasText(inv) || StringUtils.hasText(cb)) {
-            Map<String, Object> callbackMap = new LinkedHashMap<>();
-            if (StringUtils.hasText(inv)) {
-                callbackMap.put("invoiceInfo", inv);
-            }
-            if (StringUtils.hasText(cb)) {
-                callbackMap.put("callbackData", cb);
-            }
-            try {
-                callbackJson = objectMapper.writeValueAsString(callbackMap);
-            } catch (Exception e) {
-                callbackJson = String.valueOf(callbackMap);
+        String resolvedPendingId = resolvePendingIdForStatusCallback(oid, pid);
+        if (!StringUtils.hasText(resolvedPendingId) && StringUtils.hasText(pid)) {
+            resolvedPendingId = pid.trim();
+        }
+
+        int orderLogUpdated = 0;
+        if (hasStatus) {
+            java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
+            String callbackJson = buildMiniCallbackJson(inv, cb, deliveryTime);
+            String setSql = "UPDATE mcp_order_create_order_log SET order_status = ?, status_update_time = ?, " +
+                    "mini_callback_data = COALESCE(?, mini_callback_data), " +
+                    "receiver_name = COALESCE(?, receiver_name), " +
+                    "completion_images_json = COALESCE(?, completion_images_json) ";
+            if (StringUtils.hasText(oid) && StringUtils.hasText(pid)) {
+                orderLogUpdated = haidianJdbcTemplate.update(
+                        setSql + "WHERE order_id = ? OR pending_id = ?",
+                        code, now, callbackJson, rn, ci, oid, pid
+                );
+            } else if (StringUtils.hasText(oid)) {
+                orderLogUpdated = haidianJdbcTemplate.update(
+                        setSql + "WHERE order_id = ?",
+                        code, now, callbackJson, rn, ci, oid
+                );
+            } else {
+                orderLogUpdated = haidianJdbcTemplate.update(
+                        setSql + "WHERE pending_id = ?",
+                        code, now, callbackJson, rn, ci, pid
+                );
             }
         }
-        String setSql = "UPDATE mcp_order_create_order_log SET order_status = ?, status_update_time = ?, " +
-                "mini_callback_data = COALESCE(?, mini_callback_data), " +
-                "receiver_name = COALESCE(?, receiver_name), " +
-                "completion_images_json = COALESCE(?, completion_images_json) ";
-        if (StringUtils.hasText(oid) && StringUtils.hasText(pid)) {
-            updated = haidianJdbcTemplate.update(
-                    setSql + "WHERE order_id = ? OR pending_id = ?",
-                    code, now, callbackJson, rn, ci, oid, pid
-            );
-        } else if (StringUtils.hasText(oid)) {
-            updated = haidianJdbcTemplate.update(
-                    setSql + "WHERE order_id = ?",
-                    code, now, callbackJson, rn, ci, oid
-            );
-        } else {
-            updated = haidianJdbcTemplate.update(
-                    setSql + "WHERE pending_id = ?",
-                    code, now, callbackJson, rn, ci, pid
-            );
+
+        int requestLogUpdated = 0;
+        if (StringUtils.hasText(resolvedPendingId)) {
+            requestLogUpdated = mergeStatusCallbackIntoRequestLog(resolvedPendingId, callbackRequest, deliveryTime);
         }
+
+        boolean anyUpdated = requestLogUpdated > 0 || orderLogUpdated > 0;
         result.put("code", 0);
-        result.put("msg", updated > 0 ? "ok" : "未找到对应订单记录");
+        result.put("msg", anyUpdated ? "ok" : "未找到对应订单记录");
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("updated", updated);
-        data.put("orderId", oid.isEmpty() ? null : oid);
-        data.put("pendingId", pid.isEmpty() ? null : pid);
+        data.put("updated", orderLogUpdated);
+        data.put("requestLogUpdated", requestLogUpdated);
+        data.put("orderId", StringUtils.hasText(oid) ? oid : null);
+        data.put("pendingId", StringUtils.hasText(resolvedPendingId) ? resolvedPendingId
+                : (StringUtils.hasText(pid) ? pid : null));
         data.put("statusCode", code);
+        data.put("deliveryTime", hasDeliveryTime ? deliveryTime.trim() : null);
+        data.put("deliveryTimeSaved", requestLogUpdated > 0 && hasDeliveryTime);
         data.put("invoiceInfoSaved", StringUtils.hasText(inv));
-        data.put("callbackDataSaved", StringUtils.hasText(callbackJson));
+        data.put("callbackDataSaved", StringUtils.hasText(cb));
         data.put("receiverNameSaved", StringUtils.hasText(rn));
         data.put("completionImagesSaved", StringUtils.hasText(ci));
         result.put("data", data);
         return result;
+    }
+
+    private static Integer parseIntOrNull(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** 按 orderId / pendingId 解析表A pending_id（不新增记录） */
+    private String resolvePendingIdForStatusCallback(String orderId, String pendingId) {
+        if (StringUtils.hasText(pendingId)) {
+            return pendingId.trim();
+        }
+        if (!StringUtils.hasText(orderId) || haidianJdbcTemplate == null) {
+            return null;
+        }
+        String key = orderId.trim();
+        try {
+            List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(
+                    """
+                            SELECT pending_id FROM mcp_order_create_request_log
+                            WHERE pending_id = ? OR order_id = ?
+                            ORDER BY create_time DESC LIMIT 1
+                            """,
+                    key, key);
+            if (!rows.isEmpty() && StringUtils.hasText(str(rows.get(0).get("pending_id")))) {
+                return str(rows.get(0).get("pending_id")).trim();
+            }
+            rows = haidianJdbcTemplate.queryForList(
+                    """
+                            SELECT pending_id FROM mcp_order_create_order_log
+                            WHERE pending_id = ? OR order_id = ?
+                            ORDER BY create_time DESC LIMIT 1
+                            """,
+                    key, key);
+            if (!rows.isEmpty() && StringUtils.hasText(str(rows.get(0).get("pending_id")))) {
+                return str(rows.get(0).get("pending_id")).trim();
+            }
+        } catch (Exception e) {
+            log.warn("解析 pendingId 失败 orderId={}", key, e);
+        }
+        return null;
+    }
+
+    /**
+     * 小程序状态回调：将本次传参合并进表A user_request_data（仅 UPDATE，不 INSERT）。
+     */
+    private int mergeStatusCallbackIntoRequestLog(String pendingId, Map<String, Object> callbackRequest, String deliveryTime) {
+        if (haidianJdbcTemplate == null || !StringUtils.hasText(pendingId)) {
+            return 0;
+        }
+        try {
+            List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(
+                    "SELECT user_request_data FROM mcp_order_create_request_log WHERE pending_id = ? LIMIT 1",
+                    pendingId.trim());
+            if (rows.isEmpty()) {
+                return 0;
+            }
+            String existingJson = str(rows.get(0).get("user_request_data"));
+            Map<String, Object> existing = new LinkedHashMap<>();
+            if (StringUtils.hasText(existingJson)) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> parsed = objectMapper.readValue(existingJson, Map.class);
+                    if (parsed != null) {
+                        existing.putAll(parsed);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            Map<String, Object> normalized = normalizeUserRequestDataMap(existing);
+            if (StringUtils.hasText(deliveryTime)) {
+                normalized.put("deliveryTime", deliveryTime.trim());
+            }
+            String callbackAt = java.time.Instant.now().toString();
+            Map<String, Object> callbackSnap = buildMiniStatusCallbackSnapshotForStorage(
+                    callbackRequest, deliveryTime, pendingId.trim());
+            if (!callbackSnap.isEmpty()) {
+                normalized.put("_miniStatusCallback", callbackSnap);
+                normalized.put("_miniStatusCallbackAt", callbackAt);
+                appendMiniStatusCallbackHistory(normalized, callbackSnap, callbackAt);
+            }
+            String mergedJson = objectMapper.writeValueAsString(normalized);
+            return haidianJdbcTemplate.update(
+                    "UPDATE mcp_order_create_request_log SET user_request_data = ? WHERE pending_id = ?",
+                    mergedJson, pendingId.trim());
+        } catch (Exception e) {
+            log.error("合并小程序回调到 request_log 失败 pendingId={}", pendingId, e);
+            return 0;
+        }
+    }
+
+    private Map<String, Object> buildMiniStatusCallbackSnapshotForStorage(
+            Map<String, Object> callbackRequest, String deliveryTime, String resolvedPendingId) {
+        Map<String, Object> snap = extractStatusCallbackSnapshot(callbackRequest);
+        if (StringUtils.hasText(resolvedPendingId)) {
+            snap.put("pendingId", resolvedPendingId.trim());
+        }
+        if (StringUtils.hasText(deliveryTime)) {
+            snap.put("deliveryTime", deliveryTime.trim());
+        }
+        Map<String, Object> orderLog = loadOrderLogCallbackFields(resolvedPendingId);
+        if (!orderLog.isEmpty()) {
+            snap.put("orderLog", orderLog);
+        }
+        return snap;
+    }
+
+    private Map<String, Object> loadOrderLogCallbackFields(String pendingId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (haidianJdbcTemplate == null || !StringUtils.hasText(pendingId)) {
+            return out;
+        }
+        try {
+            List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(
+                    """
+                            SELECT order_status, status_update_time, receiver_name,
+                                   completion_images_json, mini_callback_data
+                            FROM mcp_order_create_order_log
+                            WHERE pending_id = ?
+                            ORDER BY create_time DESC
+                            LIMIT 1
+                            """,
+                    pendingId.trim());
+            if (rows.isEmpty()) {
+                return out;
+            }
+            Map<String, Object> row = rows.get(0);
+            Object st = row.get("order_status");
+            if (st != null) {
+                out.put("orderStatus", st);
+                out.put("orderStatusText", formatMiniOrderStatusText(st));
+            }
+            if (row.get("status_update_time") != null) {
+                out.put("statusUpdateTime", String.valueOf(row.get("status_update_time")));
+            }
+            if (StringUtils.hasText(str(row.get("receiver_name")))) {
+                out.put("receiverName", str(row.get("receiver_name")));
+            }
+            if (StringUtils.hasText(str(row.get("completion_images_json")))) {
+                out.put("completionImagesJson", str(row.get("completion_images_json")));
+            }
+            String miniCb = str(row.get("mini_callback_data"));
+            if (StringUtils.hasText(miniCb)) {
+                try {
+                    out.put("miniCallbackData", objectMapper.readValue(miniCb, Object.class));
+                } catch (Exception ignored) {
+                    out.put("miniCallbackData", miniCb);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("读取 order_log 回调字段失败 pendingId={}", pendingId, e);
+        }
+        return out;
+    }
+
+    private static String formatMiniOrderStatusText(Object statusCode) {
+        if (!(statusCode instanceof Number n)) {
+            return "";
+        }
+        return switch (n.intValue()) {
+            case 1 -> "预下单";
+            case 2 -> "已领单";
+            case 3 -> "配送中";
+            case 4 -> "待上传凭证";
+            case 5 -> "完成";
+            case 6 -> "驳回";
+            case 7 -> "已退单";
+            default -> "状态" + n.intValue();
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private void appendMiniStatusCallbackHistory(Map<String, Object> normalized, Map<String, Object> snap, String callbackAt) {
+        List<Map<String, Object>> hist = new ArrayList<>();
+        Object existing = normalized.get("_miniStatusCallbackHistory");
+        if (existing instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> m) {
+                    hist.add((Map<String, Object>) m);
+                }
+            }
+        }
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("at", callbackAt);
+        entry.put("data", snap);
+        hist.add(entry);
+        int max = 30;
+        if (hist.size() > max) {
+            hist = new ArrayList<>(hist.subList(hist.size() - max, hist.size()));
+        }
+        normalized.put("_miniStatusCallbackHistory", hist);
+    }
+
+    /** 历史单：表A 无回调快照时，从表B order_log 回填供审核页「订单详情」展示 */
+    private void enrichMiniCallbackFromOrderLogIfMissing(Map<String, Object> requestData, String pendingId) {
+        if (requestData == null || !StringUtils.hasText(pendingId)) {
+            return;
+        }
+        Object existing = requestData.get("_miniStatusCallback");
+        if (existing instanceof Map<?, ?> m && !m.isEmpty()) {
+            return;
+        }
+        if (existing != null && !(existing instanceof Map)) {
+            return;
+        }
+        Map<String, Object> orderLog = loadOrderLogCallbackFields(pendingId);
+        if (orderLog.isEmpty()) {
+            return;
+        }
+        Map<String, Object> snap = new LinkedHashMap<>();
+        snap.put("pendingId", pendingId.trim());
+        snap.put("orderLog", orderLog);
+        snap.put("_fromOrderLog", Boolean.TRUE);
+        requestData.put("_miniStatusCallback", snap);
+        String at = str(orderLog.get("statusUpdateTime"));
+        if (StringUtils.hasText(at)) {
+            requestData.put("_miniStatusCallbackAt", at);
+        }
+    }
+
+    private static void putMiniStatusCallbackListFields(Map<String, Object> orderItem, Map<String, Object> requestData) {
+        if (orderItem == null) {
+            return;
+        }
+        Object snap = requestData != null ? requestData.get("_miniStatusCallback") : null;
+        boolean has = snap != null;
+        if (snap instanceof Map<?, ?> m && m.isEmpty()) {
+            has = false;
+        }
+        orderItem.put("mini_status_callback", snap);
+        orderItem.put("mini_status_callback_at", requestData != null ? requestData.get("_miniStatusCallbackAt") : null);
+        orderItem.put("mini_status_callback_history", requestData != null ? requestData.get("_miniStatusCallbackHistory") : null);
+        orderItem.put("has_mini_status_callback", has);
+    }
+
+    /** 列表接口：不返回回调大字段、不联表 order_log，详情见 getOrderAuditDetail */
+    private static void putMiniStatusCallbackListFieldsLite(Map<String, Object> orderItem, Map<String, Object> requestData) {
+        if (orderItem == null) {
+            return;
+        }
+        String at = requestData != null ? str(requestData.get("_miniStatusCallbackAt")) : null;
+        Object snap = requestData != null ? requestData.get("_miniStatusCallback") : null;
+        boolean has = StringUtils.hasText(at);
+        if (!has && snap instanceof Map<?, ?> m) {
+            has = !m.isEmpty();
+        } else if (!has && snap != null && !(snap instanceof Map<?, ?>)) {
+            has = true;
+        }
+        orderItem.put("mini_status_callback_at", at);
+        orderItem.put("has_mini_status_callback", has);
+    }
+
+    private Map<String, Object> extractStatusCallbackSnapshot(Map<String, Object> callbackRequest) {
+        Map<String, Object> snap = new LinkedHashMap<>();
+        if (callbackRequest == null || callbackRequest.isEmpty()) {
+            return snap;
+        }
+        String[] keys = {
+                "orderId", "order_id", "pendingId", "pending_id",
+                "statusCode", "status", "invoiceInfo", "invoice_info",
+                "callbackData", "callback_data", "receiverName", "receiver_name",
+                "completionImagesJson", "completion_images_json",
+                "deliveryTime", "delivery_time"
+        };
+        for (String k : keys) {
+            Object v = callbackRequest.get(k);
+            if (v == null) {
+                continue;
+            }
+            if (v instanceof String s) {
+                if (!StringUtils.hasText(s)) {
+                    continue;
+                }
+                snap.put(k, s.trim());
+            } else {
+                snap.put(k, v);
+            }
+        }
+        return snap;
+    }
+
+    private String buildMiniCallbackJson(String invoiceInfo, String callbackData, String deliveryTime) {
+        Map<String, Object> callbackMap = new LinkedHashMap<>();
+        if (StringUtils.hasText(invoiceInfo)) {
+            callbackMap.put("invoiceInfo", invoiceInfo);
+        }
+        if (StringUtils.hasText(callbackData)) {
+            callbackMap.put("callbackData", callbackData);
+        }
+        if (StringUtils.hasText(deliveryTime)) {
+            callbackMap.put("deliveryTime", deliveryTime.trim());
+        }
+        if (callbackMap.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(callbackMap);
+        } catch (Exception e) {
+            return String.valueOf(callbackMap);
+        }
     }
 
     private Integer normalizeOrderStatusCode(Integer statusCode, String statusText) {

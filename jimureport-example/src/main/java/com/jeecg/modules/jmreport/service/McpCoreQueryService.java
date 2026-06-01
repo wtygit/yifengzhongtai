@@ -69,8 +69,12 @@ public interface McpCoreQueryService {
      * @param status    订单状态：预下单 / 下单成功 / 退单
      * @return 统一返回结构：{code, msg, data}
      */
-    Map<String, Object> updateOrderStatus(String orderId, String pendingId, Integer statusCode, String status,
-                                          String invoiceInfo, String callbackData, String receiverName, String completionImagesJson);
+    /**
+     * 小程序订单状态回调：更新表B {@code mcp_order_create_order_log}；并按 pendingId 合并更新表A {@code user_request_data}（含 deliveryTime 送达时间）。
+     *
+     * @param callbackRequest 请求体 Map（orderId/pendingId、statusCode、deliveryTime 等）
+     */
+    Map<String, Object> updateOrderStatus(Map<String, Object> callbackRequest);
 
     /**
      * 建档接口：写入 ocrsichuanyibao。仅传 11 位手机号即可；无手机号时需姓名与身份证两项。
@@ -135,10 +139,26 @@ public interface McpCoreQueryService {
      */
     Map<String, Object> getOrderAuditList(String status, String groupToken,
                                           String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
-                                          String storeId,
+                                          String userGroupNickname, String storeId,
                                           String createDateStart, String createDateEnd,
                                           String createTimeStart, String createTimeEnd,
-                                          String requestTriggerType, String orderBizType);
+                                          String requestTriggerType, String orderBizType,
+                                          boolean forExport);
+
+    /**
+     * 订单审核列表全量统计（与列表筛选条件一致，供前端异步加载）
+     */
+    Map<String, Object> getOrderAuditCount(String status, String groupToken,
+                                           String pendingId, String patientName, String patientPhone, String patientIdCard, String groupName,
+                                           String userGroupNickname, String storeId,
+                                           String createDateStart, String createDateEnd,
+                                           String createTimeStart, String createTimeEnd,
+                                           String requestTriggerType, String orderBizType);
+
+    /**
+     * 单笔订单详情（含小程序回调、order_log 回填），供「订单详情」弹窗按需加载
+     */
+    Map<String, Object> getOrderAuditDetail(String pendingId);
 
     /**
      * 按群分词查询待审核相关订单（与审核列表结构一致，默认仅 audit_status=0）
