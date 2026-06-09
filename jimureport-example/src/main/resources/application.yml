@@ -165,7 +165,7 @@ yunwu:
   api:
     url: https://yunwu.ai/v1/chat/completions
     # 请不要把真实 key 提交到代码仓库，可通过环境变量 YUNWU_API_KEY 注入
-    api-key: ${YUNWU_API_KEY:sk-lI3QY06uPrDsVVL16mjZftfmartq9peINATCWvrD4VvGLWS1}
+    api-key: ${YUNWU_API_KEY:sk-pIkk250FC7DtRcUR4YvZBwEKYxDt7OjOJaKIhB4NzS28CMEw}
     model: gpt-4.1-mini-2025-04-14
 # 中台下单接口（/mcp/core_order_create 使用）
 middle-platform:

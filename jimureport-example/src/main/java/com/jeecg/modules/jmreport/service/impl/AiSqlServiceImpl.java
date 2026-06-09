@@ -2,11 +2,11 @@ package com.jeecg.modules.jmreport.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jeecg.modules.jmreport.config.DashScopeProperties;
 import com.jeecg.modules.jmreport.service.AiSqlService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -30,14 +30,8 @@ import java.util.Map;
 @Service
 public class AiSqlServiceImpl implements AiSqlService {
 
-    @Value("${yunwu.base-url:https://yunwu.ai/v1/chat/completions}")
-    private String yunwuBaseUrl;
-
-    @Value("${yunwu.api-key:}")
-    private String yunwuApiKey;
-
-    @Value("${yunwu.model:gpt-4.1-mini-2025-04-14}")
-    private String yunwuModel;
+    @Autowired
+    private DashScopeProperties dashScopeProperties;
 
     /**
      * 复用海典同步数据源，保持与现有 MCP 查询一致
@@ -386,6 +380,7 @@ public class AiSqlServiceImpl implements AiSqlService {
     @Override
     public Map<String, Object> queryByAi(String toolName, Map<String, Object> params) throws Exception {
         // 1. 未配置 API Key：视为未启用 AI，走兜底 SQL
+        String yunwuApiKey = dashScopeProperties.getApiKey();
         if (yunwuApiKey == null || yunwuApiKey.isEmpty()) {
             log.debug("Yunwu API key 未配置，跳过 AI SQL");
             return null;
@@ -403,7 +398,7 @@ public class AiSqlServiceImpl implements AiSqlService {
         String userPrompt = buildUserPrompt(toolName, params);
 
         Map<String, Object> payload = Map.of(
-                "model", yunwuModel,
+                "model", dashScopeProperties.getModel(),
                 "temperature", 0,
                 "stream", false,
                 "messages", List.of(
@@ -420,7 +415,7 @@ public class AiSqlServiceImpl implements AiSqlService {
             // 云雾通常兼容 Bearer 方式，如有差异按官方文档调整
             headers.setBearerAuth(yunwuApiKey);
             HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
-            responseBody = restTemplate.postForObject(yunwuBaseUrl, entity, String.class);
+            responseBody = restTemplate.postForObject(dashScopeProperties.getUrl(), entity, String.class);
         } catch (Exception e) {
             log.warn("调用云雾大模型失败，toolName={}, params={}", toolName, params, e);
             return null;
