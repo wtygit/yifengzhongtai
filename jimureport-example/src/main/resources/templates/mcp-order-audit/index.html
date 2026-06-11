@@ -940,6 +940,78 @@
             const esc = escapeHtml(t);
             return '<span class="cell-ellipsis-remark" title="' + esc + '">' + esc + '</span>';
         }
+        /** 云手指聊天截图：缩略图无后缀，标清 _md、高清 _hd（插在 ? 查询参数之前） */
+        function isYunshouzhiChatResUrl(url) {
+            if (!url || typeof url !== 'string') return false;
+            try {
+                const u = new URL(url.trim());
+                return u.hostname.endsWith('yunshouzhi.net') && u.pathname.includes('/chatRes/');
+            } catch (e) {
+                return false;
+            }
+        }
+        function normalizeYunshouzhiChatResThumbUrl(url) {
+            const trimmed = String(url).trim();
+            const qIdx = trimmed.indexOf('?');
+            let pathPart = qIdx >= 0 ? trimmed.slice(0, qIdx) : trimmed;
+            const queryPart = qIdx >= 0 ? trimmed.slice(qIdx) : '';
+            pathPart = pathPart.replace(/_(hd|md)$/i, '');
+            return pathPart + queryPart;
+        }
+        function toYunshouzhiChatResQualityUrl(url, quality) {
+            const thumb = normalizeYunshouzhiChatResThumbUrl(url);
+            const qIdx = thumb.indexOf('?');
+            let pathPart = qIdx >= 0 ? thumb.slice(0, qIdx) : thumb;
+            const queryPart = qIdx >= 0 ? thumb.slice(qIdx) : '';
+            const suffix = quality === 'hd' ? '_hd' : '_md';
+            return pathPart + suffix + queryPart;
+        }
+        function imageUrlLoads(url, timeoutMs) {
+            const ms = timeoutMs || 12000;
+            return new Promise(function(resolve) {
+                const img = new Image();
+                let done = false;
+                function finish(ok) {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    img.onload = null;
+                    img.onerror = null;
+                    resolve(ok);
+                }
+                const timer = setTimeout(function() { finish(false); }, ms);
+                img.onload = function() { finish(true); };
+                img.onerror = function() { finish(false); };
+                img.src = url;
+            });
+        }
+        async function urlResourceExists(url) {
+            try {
+                const resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+                if (resp.type !== 'opaque') {
+                    if (!resp.ok) return false;
+                    const len = resp.headers.get('content-length');
+                    if (len !== null && parseInt(len, 10) === 0) return false;
+                    return true;
+                }
+            } catch (e) { /* CORS 或网络失败，改用图片探测 */ }
+            return await imageUrlLoads(url);
+        }
+        async function resolveY3BestViewUrl(thumbUrl) {
+            const raw = (thumbUrl || '').trim();
+            if (!raw) return raw;
+            if (raw.startsWith('data:image/')) return raw;
+            if (!isYunshouzhiChatResUrl(raw)) return raw;
+            const thumb = normalizeYunshouzhiChatResThumbUrl(raw);
+            const hdUrl = toYunshouzhiChatResQualityUrl(thumb, 'hd');
+            const mdUrl = toYunshouzhiChatResQualityUrl(thumb, 'md');
+            if (await urlResourceExists(hdUrl)) return hdUrl;
+            if (await urlResourceExists(mdUrl)) return mdUrl;
+            return thumb;
+        }
+        function y3ImageModalOnclickArg(url) {
+            return encodeURIComponent(String(url).trim());
+        }
         function renderY3ImageInfo(y3ImageInfo) {
             if (!y3ImageInfo) return '';
             const trimmed = y3ImageInfo.trim();
@@ -955,7 +1027,7 @@
                     validUrls.slice(0, 5).forEach((url, idx) => {
                         const escapedUrl = escapeHtml(url.trim());
                         html += `<img src="${escapedUrl}" style="max-width: 60px; max-height: 60px; margin-right: 4px; border-radius: 2px; cursor: pointer;" 
-                                   onclick="showY3ImageModal('${escapedUrl}')" 
+                                   onclick="showY3ImageModal(decodeURIComponent('${y3ImageModalOnclickArg(url.trim())}'))" 
                                    title="点击查看大图" 
                                    data-index="${idx}">`;
                     });
@@ -969,15 +1041,14 @@
             if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/')) {
                 const escapedUrl = escapeHtml(trimmed);
                 return `<img src="${escapedUrl}" style="max-width: 60px; max-height: 60px; border-radius: 2px; cursor: pointer;" 
-                           onclick="showY3ImageModal('${escapedUrl}')" 
+                           onclick="showY3ImageModal(decodeURIComponent('${y3ImageModalOnclickArg(trimmed)}'))" 
                            title="点击查看大图">`;
             }
             return escapeHtml(trimmed.length > 40 ? trimmed.substring(0, 40) + '…' : trimmed);
         }
-        function showY3ImageModal(url) {
+        function showY3ImageModal(thumbUrl) {
             const modal = document.createElement('div');
             modal.className = 'modal fade show';
-            modal.style.display = 'block';
             modal.style.backgroundColor = 'rgba(0,0,0,0.7)';
             modal.style.position = 'fixed';
             modal.style.top = 0;
@@ -989,15 +1060,29 @@
             modal.style.alignItems = 'center';
             modal.style.justifyContent = 'center';
             modal.onclick = function() { modal.remove(); };
-            const img = document.createElement('img');
-            img.src = url;
-            img.style.maxWidth = '90vw';
-            img.style.maxHeight = '90vh';
-            img.style.borderRadius = '8px';
-            img.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
-            img.onclick = function(e) { e.stopPropagation(); };
-            modal.appendChild(img);
+            const loading = document.createElement('div');
+            loading.className = 'text-white small';
+            loading.textContent = '加载高清图…';
+            modal.appendChild(loading);
             document.body.appendChild(modal);
+            resolveY3BestViewUrl(thumbUrl).then(function(viewUrl) {
+                loading.remove();
+                const img = document.createElement('img');
+                img.src = viewUrl || thumbUrl;
+                img.style.maxWidth = '90vw';
+                img.style.maxHeight = '90vh';
+                img.style.borderRadius = '8px';
+                img.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+                img.onclick = function(e) { e.stopPropagation(); };
+                img.onerror = function() {
+                    if (img.src !== thumbUrl) {
+                        img.src = thumbUrl;
+                    }
+                };
+                modal.appendChild(img);
+            }).catch(function() {
+                loading.textContent = '加载失败，点击关闭';
+            });
         }
         function renderY3ImagePreview(containerId, y3ImageInfo) {
             const container = document.getElementById(containerId);
@@ -1021,7 +1106,7 @@
                     validUrls.slice(0, 5).forEach((url, idx) => {
                         const escapedUrl = escapeHtml(url.trim());
                         html += `<img src="${escapedUrl}" style="max-width: 80px; max-height: 80px; margin-right: 8px; margin-bottom: 8px; border-radius: 4px; cursor: pointer; border: 1px solid #dee2e6;" 
-                                   onclick="showY3ImageModal('${escapedUrl}')" 
+                                   onclick="showY3ImageModal(decodeURIComponent('${y3ImageModalOnclickArg(url.trim())}'))" 
                                    title="点击查看大图">`;
                     });
                     if (validUrls.length > 5) {
@@ -1036,7 +1121,7 @@
             if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:image/')) {
                 const escapedUrl = escapeHtml(trimmed);
                 container.innerHTML = `<img src="${escapedUrl}" style="max-width: 120px; max-height: 120px; border-radius: 4px; cursor: pointer; border: 1px solid #dee2e6;" 
-                                       onclick="showY3ImageModal('${escapedUrl}')" 
+                                       onclick="showY3ImageModal(decodeURIComponent('${y3ImageModalOnclickArg(trimmed)}'))" 
                                        title="点击查看大图">`;
                 return;
             }
@@ -1082,7 +1167,7 @@
                 const escapedUrl = escapeHtml(url);
                 html += `<div class="d-inline-block text-center me-2 mb-2 align-top">
                     <img src="${escapedUrl}" alt="" style="max-width: 96px; max-height: 96px; border-radius: 4px; cursor: pointer; border: 1px solid #dee2e6; display: block;"
-                         onclick="showY3ImageModal('${escapedUrl}')" title="点击查看大图">
+                         onclick="showY3ImageModal(decodeURIComponent('${y3ImageModalOnclickArg(url)}'))" title="点击查看大图">
                     <button type="button" class="btn btn-link btn-sm text-danger p-0" onclick="removeEditY3ScreenshotAt(${idx})">移除</button>
                 </div>`;
             });
