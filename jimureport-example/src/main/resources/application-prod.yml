@@ -149,3 +149,10 @@ mcp:
     access-token-ttl-seconds: ${MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS:-1}
     static-access-token: ${MCP_OAUTH_STATIC_TOKEN:mcp-yifeng-fixed-bearer-7Kp9mN2xQ4vL8wR3sT6jH1gF5dC0bA}
   # 提示音 URL 与默认路径写在 application.yml；此处勿再写空默认值，否则会覆盖主配置导致始终走内置蜂鸣
+
+# DeepSeek OpenAI 兼容接口（与 DashScopeProperties 前缀一致：yunwu.api.*）
+yunwu:
+  api:
+    url: https://api.deepseek.com/v1/chat/completions
+    api-key: ${YUNWU_API_KEY:sk-ce545d23cd414ab4b441a1f363ef4fa8}
+    model: deepseek-v4-flash

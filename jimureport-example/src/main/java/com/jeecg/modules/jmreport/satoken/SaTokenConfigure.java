@@ -44,23 +44,61 @@ public class SaTokenConfigure implements WebMvcConfigurer {
 
                 // 指定 [拦截路由] 与 [放行路由]
                 .addInclude("/**")
-                .addExclude("/favicon.ico")
-                .addExclude("/login/**")
+                
+                // 放行登录相关路径
+                .addExclude("/login/login.html")
                 .addExclude("/doLogin")
+                
+                // 放行MCP API接口（由 McpOauthBearerFilter 处理 OAuth Bearer Token 认证）
+                .addExclude("/mcp/rpc")
+                .addExclude("/mcp/core_oauth_token")
+                .addExclude("/mcp/core_order_query")
+                .addExclude("/mcp/core_insurance_query")
+                .addExclude("/mcp/core_drug_query")
+                .addExclude("/mcp/core_visit_strategy_query")
+                .addExclude("/mcp/core_order_create")
+                .addExclude("/mcp/core_profile_create")
+                .addExclude("/mcp/core_shipment_create")
+                .addExclude("/mcp/core_order_status_update")
+                .addExclude("/mcp/core_order_approve")
+                .addExclude("/mcp/core_order_reject")
+                .addExclude("/mcp/core_order_void")
+                .addExclude("/mcp/order-audit-list")
+                .addExclude("/mcp/order-query-by-group-token")
+                .addExclude("/mcp/chat-group-config/**")
+                .addExclude("/mcp/order-audit-list")
+                
+                // 放行WebSocket连接
                 .addExclude("/ws/**")
                 
-
+                // 放行静态资源
+                .addExclude("/favicon.ico")
+                .addExclude("/css/**")
+                .addExclude("/js/**")
+                .addExclude("/images/**")
+                .addExclude("/fonts/**")
+                .addExclude("/lib/**")
+                .addExclude("/static/**")
+                .addExclude("/error")
+                
                 // 认证函数: 每次请求执行
                 .setAuth(obj -> {
                     // 设置登录来源，方便退出登录时区分
                     AjaxRequestUtils.setLoginSessionInfo();
                     
-                    // 检查是否需要进行登录检查
+                    // 获取当前请求路径
                     String path = SaHolder.getRequest().getRequestPath();
-                    if (path.startsWith("/api-generator/design") || path.startsWith("/api-generator/list") || path.startsWith("/jmreport/list")) {
+                    HttpServletRequest request = JimuSpringContextUtils.getHttpServletRequest();
+                    
+                    // 判断是否为页面请求（需要Sa-Token登录态）
+                    // 规则：路径以页面路由开头，且不是API接口
+                    boolean isPageRequest = isNeedAuthPage(path, request);
+                    
+                    if (isPageRequest) {
                         // 检查用户是否已登录，未登录会自动抛出NotLoginException异常
                         StpUtil.checkLogin();
                     }
+                    // API请求直接放行，由对应过滤器处理（如MCP的Bearer Token）
                 })
 
                 // 异常处理函数：每次认证函数发生异常时执行此函数 
@@ -70,10 +108,11 @@ public class SaTokenConfigure implements WebMvcConfigurer {
                     
                     // 处理未登录异常
                     if (e instanceof cn.dev33.satoken.exception.NotLoginException) {
-                        // 获取当前请求路径和参数
                         String path = SaHolder.getRequest().getRequestPath();
-                        String queryString = "";
                         HttpServletRequest request = JimuSpringContextUtils.getHttpServletRequest();
+                        
+                        // 构建重定向URL参数
+                        String queryString = "";
                         if (request != null) {
                             queryString = request.getQueryString();
                         }
@@ -82,16 +121,13 @@ public class SaTokenConfigure implements WebMvcConfigurer {
                             fullUrl += "?" + queryString;
                         }
                         
-                        // 如果是HTML页面请求（不是API请求），重定向到登录页面
-                        if (path.startsWith("/api-generator/design") || path.startsWith("/api-generator/list") || path.startsWith("/jmreport/list")) {
-                            try {
-                                // 重定向到登录页面，并带上原始请求的URL作为参数
-                                SaHolder.getResponse().redirect("/login/login.html?redirect=" + java.net.URLEncoder.encode(fullUrl, "UTF-8"));
-                            } catch (Exception ex) {
-                                ex.printStackTrace();
-                            }
-                            return null;
+                        // 重定向到登录页面，并带上原始请求的URL作为参数
+                        try {
+                            SaHolder.getResponse().redirect("/login/login.html?redirect=" + java.net.URLEncoder.encode(fullUrl, "UTF-8"));
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
                         }
+                        return null;
                     }
                     
                     e.printStackTrace();
@@ -118,6 +154,91 @@ public class SaTokenConfigure implements WebMvcConfigurer {
                             .setHeader("X-Content-Type-Options", "nosniff")
                     ;
                 });
+    }
+
+    /**
+     * 判断请求是否为需要Sa-Token登录认证的页面请求
+     * 
+     * @param path 请求路径
+     * @param request HTTP请求对象
+     * @return true=需要认证，false=不需要认证
+     */
+    private boolean isNeedAuthPage(String path, HttpServletRequest request) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        
+        // 0. 先判断是否为静态资源（不需要认证）
+        if (isStaticResource(path)) {
+            return false;
+        }
+        
+        // 1. 优先判断：如果路径明确是页面路由，则需要认证
+        String[] pagePrefixes = {
+            "/jmreport",           // 积木报表工作台
+            "/drag",                // 积木BI大屏工作台
+            "/api-generator",       // API生成器
+            "/mcp/order-audit",     // MCP订单审核页面
+            "/table-association",   // 表关联配置页面
+            "/mcp/store-login-admin", // 门店登录管理
+        };
+        
+        for (String prefix : pagePrefixes) {
+            if (path.startsWith(prefix)) {
+                return true;
+            }
+        }
+        
+        // 2. 特殊路径：根路径或直接访问html文件
+        if (path.equals("/") || path.endsWith(".html")) {
+            return true;
+        }
+        
+        // 3. 通过请求头判断：如果Accept包含text/html，说明是浏览器页面请求
+        if (request != null) {
+            String acceptHeader = request.getHeader("Accept");
+            if (acceptHeader != null && acceptHeader.contains("text/html")) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 判断是否为静态资源路径（不需要认证）
+     */
+    private boolean isStaticResource(String path) {
+        if (path == null) {
+            return false;
+        }
+        // 常见静态资源扩展名
+        String[] staticExtensions = {
+            ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", 
+            ".ico", ".woff", ".woff2", ".ttf", ".eot", ".mp3", ".map",
+            ".bmp", ".webp", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+            ".zip", ".rar", ".7z", ".exe", ".msi"
+        };
+        
+        for (String ext : staticExtensions) {
+            if (path.endsWith(ext)) {
+                return true;
+            }
+        }
+        
+        // 静态资源目录前缀（已在addExclude中配置的，但这里兜底判断）
+        String[] staticPrefixes = {
+            "/css/", "/js/", "/images/", "/fonts/", "/lib/", "/static/",
+            "/favicon.ico", "/error"
+        };
+        
+        for (String prefix : staticPrefixes) {
+            if (path.startsWith(prefix) || path.equals(prefix)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
 }

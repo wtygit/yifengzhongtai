@@ -13,7 +13,7 @@ spring:
       max-request-size: 25MB
   # 本地报表库数据源（系统自身使用）
   datasource:
-    jdbc-url: jdbc:mysql://${MYSQL-HOST:139.155.91.119}:${MYSQL-PORT:3306}/jimureport?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
+    jdbc-url: jdbc:mysql://${MYSQL-HOST:localhost}:${MYSQL-PORT:3306}/jimureport?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&zeroDateTimeBehavior=convertToNull
 #    username: ${MYSQL-USER:root}
 #    password: ${MYSQL-PASSWORD:123456}
     username: ${MYSQL-USER:jimureport}
@@ -160,13 +160,13 @@ jeecg:
       - 40
     ai:
       jeecg-host: http://localhost:8080/jeecgboot/
-# 云雾 OpenAI 兼容接口（聊天记录提取等；与 DashScopeProperties 前缀一致：yunwu.api.*）
+# DeepSeek OpenAI 兼容接口（聊天记录提取、AI SQL 生成等；与 DashScopeProperties 前缀一致：yunwu.api.*）
 yunwu:
   api:
-    url: https://yunwu.ai/v1/chat/completions
+    url: https://api.deepseek.com/v1/chat/completions
     # 请不要把真实 key 提交到代码仓库，可通过环境变量 YUNWU_API_KEY 注入
-    api-key: ${YUNWU_API_KEY:sk-pIkk250FC7DtRcUR4YvZBwEKYxDt7OjOJaKIhB4NzS28CMEw}
-    model: gpt-4.1-mini-2025-04-14
+    api-key: ${YUNWU_API_KEY:sk-ce545d23cd414ab4b441a1f363ef4fa8}
+    model: deepseek-v4-flash
 # 中台下单接口（/mcp/core_order_create 使用）
 middle-platform:
   # 文档示例环境：http://test-cn.your-api-server.com
@@ -191,6 +191,8 @@ mcp:
   # 订单审核页提示音：填写音频 URL（相对站点根路径如 /sounds/mcp/new.mp3，或 https 绝对地址）；留空则用内置蜂鸣。
   # 页面播放时会自动追加 ?mcp_snd=时间戳，避免替换同名 mp3 后浏览器仍播缓存旧文件。
   order-audit:
+    # 待审核订单超时提醒：创建超过该分钟数且未查看/未处理时在审核页右下角弹窗
+    pending-timeout-minutes: ${MCP_ORDER_AUDIT_PENDING_TIMEOUT_MINUTES:10}
     sound-new-url: ${MCP_ORDER_AUDIT_SOUND_NEW:/sounds/mcp-order-audit/2026040611343499593409.mp3}
     sound-merged-url: ${MCP_ORDER_AUDIT_SOUND_MERGED:/sounds/mcp-order-audit/2026040611373197091061.mp3}
     sound-save-url: ${MCP_ORDER_AUDIT_SOUND_SAVE:}

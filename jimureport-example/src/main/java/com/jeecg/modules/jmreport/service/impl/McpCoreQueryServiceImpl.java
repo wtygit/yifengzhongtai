@@ -2655,9 +2655,12 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
 
         boolean hasUserFilter = hasAnyOrderAuditUserFilter(status, groupToken, pendingId, patientName, patientPhone, patientIdCard, groupName,
                 userGroupNickname, storeId, createDateStart, createDateEnd, createTimeStart, createTimeEnd, orderBizType);
-        if (forExport && !hasUserFilter) {
+        String triggerNormEarly = normalizeOrderTriggerTypeText(requestTriggerType, null, null);
+        // 导出：允许「仅当前 Tab（手机号/身份证）」作为有效筛选，与页面筛选结果统计一致
+        boolean hasExportScope = hasUserFilter || StringUtils.hasText(triggerNormEarly);
+        if (forExport && !hasExportScope) {
             result.put("code", 400);
-            result.put("msg", "导出筛选结果需至少设置一项筛选条件（如状态、日期、订单号等）");
+            result.put("msg", "导出筛选结果需至少设置一项筛选条件（如状态、日期、订单号等），或指定 requestTriggerType");
             result.put("data", new java.util.ArrayList<>());
             return result;
         }
@@ -2697,7 +2700,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 sql += " AND pending_id LIKE ?";
                 params.add("%" + pendingId.trim() + "%");
             }
-            String triggerNorm = normalizeOrderTriggerTypeText(requestTriggerType, null, null);
+            String triggerNorm = triggerNormEarly;
             if ("idcard".equals(triggerNorm)) {
                 // 只在“身份证 Tab”场景下做粗过滤下推，减少取回行数与 JSON 解析量
                 sql += " AND (user_request_data LIKE '%\"requestTriggerType\":\"idcard\"%'"
@@ -2714,6 +2717,18 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
 
             // 列表查询：若存在 JSON 内存过滤或创建时间范围，放大 SQL 取数窗口，
             // 避免“先 LIMIT 再内存过滤”导致“统计有 351 单、列表/导出只有 100 单”。
+            // 与 computeOrderAuditTotalCountFull 的 hasJsonFiltersExceptTrigger 保持一致（含 pendingId）
+            // 与 computeOrderAuditTotalCountFull.hasJsonFiltersExceptTrigger 一致：决定是否走「仅 SQL LIKE」触发口径
+            boolean hasJsonFiltersExceptTrigger = StringUtils.hasText(tokenQ)
+                    || StringUtils.hasText(pendingId)
+                    || StringUtils.hasText(patientName)
+                    || StringUtils.hasText(patientPhone)
+                    || StringUtils.hasText(patientIdCard)
+                    || StringUtils.hasText(groupName)
+                    || StringUtils.hasText(userGroupNickname)
+                    || StringUtils.hasText(storeId)
+                    || StringUtils.hasText(orderBizType);
+            // 列表取数窗口：JSON 内存过滤条件（pendingId 已 SQL 下推，不算 deep）
             boolean hasDeepFilter = StringUtils.hasText(tokenQ)
                     || StringUtils.hasText(patientName)
                     || StringUtils.hasText(patientPhone)
@@ -2722,10 +2737,13 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     || StringUtils.hasText(userGroupNickname)
                     || StringUtils.hasText(storeId)
                     || StringUtils.hasText(orderBizType);
+            // 统计快路径：仅 Tab 触发方式(+状态/日期)时只靠 SQL LIKE，不再做 matchesOrderTriggerType。
+            // 导出/列表在相同条件下也跳过细过滤，避免「筛选 4172、导出 4132」。
+            boolean skipMemoryTriggerFilter = StringUtils.hasText(triggerNorm) && !hasJsonFiltersExceptTrigger;
             boolean needsWideFetch = hasDeepFilter || createFrom != null || createTo != null;
             final int orderAuditListMax = 5000;
-            if (forExport && hasUserFilter) {
-                // 导出：有任意用户筛选时不加 LIMIT，与 order-audit-count 全量一致
+            if (forExport && hasExportScope) {
+                // 导出：不加 LIMIT，与 order-audit-count 全量一致（含仅 Tab 触发方式）
                 sql += " ORDER BY create_time DESC";
             } else {
                 sql += " ORDER BY create_time DESC LIMIT ?";
@@ -2734,6 +2752,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
 
             List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(sql, params.toArray());
             java.util.List<Map<String, Object>> orderList = new java.util.ArrayList<>();
+            // 导出与 COUNT(DISTINCT pending_id) 对齐，避免同 pending_id 多行导致数量不一致
+            java.util.Set<String> exportSeenPendingIds = forExport ? new java.util.HashSet<>() : null;
 
             for (Map<String, Object> row : rows) {
                 String userRequestDataJson = row.get("user_request_data") == null ? null : String.valueOf(row.get("user_request_data"));
@@ -2762,7 +2782,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                             || !matchesTextFilter(str(requestData.get("userGroupNickname")), userGroupNickname)) {
                         continue;
                     }
-                    if (!matchesOrderTriggerType(requestData, requestTriggerType)) {
+                    // 与 order-audit-count 快路径一致：SQL 已按 trigger LIKE 粗过滤时，不再二次细过滤
+                    if (!skipMemoryTriggerFilter && !matchesOrderTriggerType(requestData, requestTriggerType)) {
                         continue;
                     }
                     if (!isMcpAuditStoreVisibleForRequest(requestData, reqGroupName)) {
@@ -2773,6 +2794,12 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     }
                     if (!matchesOrderBizTypeFilter(requestData, orderBizType)) {
                         continue;
+                    }
+                    if (exportSeenPendingIds != null) {
+                        String pidKey = str(row.get("pending_id"));
+                        if (!StringUtils.hasText(pidKey) || !exportSeenPendingIds.add(pidKey)) {
+                            continue;
+                        }
                     }
 
                     // 提取患者信息
@@ -2804,7 +2831,13 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     orderList.add(orderItem);
                 } catch (Exception e) {
                     log.warn("解析订单JSON失败，id={}", row.get("id"), e);
-                    // 即使解析失败，也返回基本信息
+                    // 即使解析失败，也返回基本信息（与统计快路径「SQL 命中即计入」对齐）
+                    if (exportSeenPendingIds != null) {
+                        String pidKey = str(row.get("pending_id"));
+                        if (!StringUtils.hasText(pidKey) || !exportSeenPendingIds.add(pidKey)) {
+                            continue;
+                        }
+                    }
                     Map<String, Object> orderItem = new LinkedHashMap<>();
                     orderItem.put("id", row.get("id"));
                     orderItem.put("pending_id", row.get("pending_id"));

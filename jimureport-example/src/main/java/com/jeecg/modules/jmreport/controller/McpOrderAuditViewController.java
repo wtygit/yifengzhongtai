@@ -28,6 +28,9 @@ public class McpOrderAuditViewController {
     @Value("${mcp.order-audit.shipment-sound-merged-url:}")
     private String shipmentSoundMergedUrl;
 
+    @Value("${mcp.order-audit.pending-timeout-minutes:10}")
+    private int pendingTimeoutMinutes;
+
     @GetMapping("/mcp/order-audit")
     public String orderAuditPage(Model model) {
         if (StpUtil.isLogin()) {
@@ -52,6 +55,7 @@ public class McpOrderAuditViewController {
         model.addAttribute("mcpOrderAuditSoundSave", blankToEmpty(soundSaveUrl));
         model.addAttribute("mcpOrderAuditShipmentSoundNew", blankToEmpty(shipmentSoundNewUrl));
         model.addAttribute("mcpOrderAuditShipmentSoundMerged", blankToEmpty(shipmentSoundMergedUrl));
+        model.addAttribute("mcpOrderAuditPendingTimeoutMinutes", Math.max(1, pendingTimeoutMinutes));
         return "mcp-order-audit/index";
     }
 

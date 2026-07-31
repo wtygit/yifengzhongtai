@@ -254,6 +254,128 @@
             vertical-align: middle;
             box-shadow: 0 0 0 1px rgba(255, 77, 79, 0.25);
         }
+        tr.mcp-timeout-highlight {
+            animation: mcpTimeoutRowPulse 1.2s ease-in-out 2;
+            outline: 2px solid #ff7875;
+            outline-offset: -2px;
+        }
+        @keyframes mcpTimeoutRowPulse {
+            0%, 100% { background-color: transparent; }
+            50% { background-color: #fff1f0; }
+        }
+        .mcp-timeout-toast-stack {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10050;
+            width: auto;
+            max-width: min(380px, calc(100vw - 32px));
+            pointer-events: none;
+        }
+        .mcp-timeout-panel {
+            pointer-events: auto;
+            background: #fff;
+            border-left: 4px solid #ff7875;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+            border-radius: 10px;
+            overflow: hidden;
+            animation: mcpTimeoutSlideIn 0.28s ease;
+        }
+        .mcp-timeout-panel.collapsed {
+            min-width: 220px;
+        }
+        .mcp-timeout-panel.expanded {
+            width: min(380px, calc(100vw - 32px));
+        }
+        @keyframes mcpTimeoutSlideIn {
+            from { transform: translateX(110%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .mcp-timeout-panel-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            cursor: pointer;
+            user-select: none;
+            background: linear-gradient(90deg, #fff1f0 0%, #fff 55%);
+        }
+        .mcp-timeout-panel-bar:hover {
+            background: #fff1f0;
+        }
+        .mcp-timeout-panel-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 22px;
+            height: 22px;
+            padding: 0 6px;
+            border-radius: 11px;
+            background: #ff4d4f;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .mcp-timeout-panel-title {
+            flex: 1;
+            font-weight: 600;
+            color: #cf1322;
+            font-size: 13px;
+            line-height: 1.3;
+        }
+        .mcp-timeout-panel-toggle {
+            color: #8c8c8c;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .mcp-timeout-panel-body {
+            border-top: 1px solid #f0f0f0;
+            max-height: min(42vh, 360px);
+            overflow-y: auto;
+            padding: 8px 10px 10px;
+        }
+        .mcp-timeout-toast {
+            background: #fafafa;
+            border: 1px solid #f0f0f0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+        }
+        .mcp-timeout-toast:last-child {
+            margin-bottom: 0;
+        }
+        .mcp-timeout-toast-title {
+            font-weight: 600;
+            color: #cf1322;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+        .mcp-timeout-toast-body {
+            font-size: 12px;
+            color: #434343;
+            line-height: 1.45;
+        }
+        .mcp-timeout-toast-meta {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 3px;
+        }
+        .mcp-timeout-toast-store {
+            color: #595959;
+            font-weight: 500;
+        }
+        .mcp-timeout-toast-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .mcp-timeout-panel-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 0 10px 10px;
+        }
     </style>
 </head>
 <body th:attr="data-mcp-audit-store-id=${mcpAuditStoreId},data-mcp-audit-admin-bypass=${mcpAuditAdminBypass}">
@@ -262,7 +384,9 @@
          th:data-sound-merged="${mcpOrderAuditSoundMerged}"
          th:data-sound-save="${mcpOrderAuditSoundSave}"
          th:data-shipment-sound-new="${mcpOrderAuditShipmentSoundNew}"
-         th:data-shipment-sound-merged="${mcpOrderAuditShipmentSoundMerged}"></div>
+         th:data-shipment-sound-merged="${mcpOrderAuditShipmentSoundMerged}"
+         th:data-pending-timeout-minutes="${mcpOrderAuditPendingTimeoutMinutes}"></div>
+    <div id="mcpOrderTimeoutToastStack" class="mcp-timeout-toast-stack" aria-live="polite"></div>
     <nav class="navbar navbar-expand-lg" style="background-color: #1890ff; color: white; margin-bottom: 20px;">
         <a class="navbar-brand" href="#" style="color: white; font-size: 16px; font-weight: bold; padding-left: 20px;">一丰中台</a>
         <div class="navbar-collapse d-flex align-items-center w-100">
@@ -399,11 +523,23 @@
                 </div>
             </div>
 
-            <div class="mcp-audit-filter-actions d-flex flex-wrap justify-content-end align-items-center gap-2 mt-3 pt-3 border-top">
-                <button type="button" class="btn btn-sm btn-outline-success" onclick="exportSelectedOrders()">导出所选</button>
+            <div class="mcp-audit-filter-actions d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 pt-3 border-top">
+                <div class="d-flex flex-wrap align-items-center gap-2 mcp-audit-timeout-settings">
+                    <span class="text-muted small fw-semibold">待处理超时提醒</span>
+                    <input type="number" id="cfgPendingTimeoutMinutes" class="form-control form-control-sm"
+                           style="width: 76px;" min="1" max="1440" step="1" title="待下单订单超过该分钟数未处理时在右下角提醒">
+                    <span class="text-muted small">分钟</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyPendingTimeoutSettings()">应用</button>
+                    <button type="button" class="btn btn-sm btn-link text-secondary px-1" onclick="resetPendingTimeoutSettings()">恢复默认</button>
+                    <span id="cfgPendingTimeoutHint" class="text-muted small"></span>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="exportSelectedOrders()"
+                        title="有勾选则只导出勾选；无勾选则导出当前筛选全部结果（含当前 Tab）">导出</button>
                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="openManualAddOrderModal()">手动新增</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetFilters()">重置</button>
                 <button type="button" class="btn btn-sm btn-primary px-3" onclick="loadOrders()">查询 / 刷新</button>
+                </div>
             </div>
         </div>
 
@@ -903,6 +1039,13 @@
             if (!m) return [];
             return m[1].replace(/，/g, ',').split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
         }
+        function resolveOrderStoreDisplay(order) {
+            if (!order) return '';
+            const direct = String(order.store_ids || order.storeIds || '').trim();
+            if (direct) return direct;
+            const fromGroup = storeIdsFromGroupNameText(order.group_name || order.groupName || '');
+            return fromGroup.length ? fromGroup.join(',') : '';
+        }
         function canEditOrderByGroupName(groupName) {
             // 取消门店编辑限制：所有门店都可以编辑任何订单数据
             return true;
@@ -1301,9 +1444,11 @@
         }
         function hasAnyAuditFilterForExport(filters) {
             if (!filters) return false;
+            // 当前 Tab（phone/idcard）也算有效导出范围，与「筛选结果」统计一致
             return !!(filters.status || filters.orderBizType || filters.groupToken || filters.pendingId
                 || filters.patientName || filters.patientPhone || filters.patientIdCard || filters.groupName
-                || filters.userGroupNickname || filters.storeId || filters.createDateStart || filters.createDateEnd);
+                || filters.userGroupNickname || filters.storeId || filters.createDateStart || filters.createDateEnd
+                || filters.requestTriggerType);
         }
 
         function buildOrderExportRowsFromApi(orders) {
@@ -1339,46 +1484,56 @@
             const filters = getAuditFilters();
             const hasFilter = hasAnyAuditFilterForExport(filters);
             const hasSelection = selectedOrderPendingIds.size > 0;
-            if (!hasSelection && !hasFilter) {
-                alert('请先勾选要导出的订单，或设置筛选条件后导出当前筛选结果');
-                return;
-            }
-            const finishExport = (headers, rows, isIdcard) => {
+            // 有勾选：只导出勾选（列表页通常只有约 100 条，全选也只有当前页）
+            if (hasSelection) {
+                if (lastFilterTotalCount != null && Number.isFinite(lastFilterTotalCount)
+                        && selectedOrderPendingIds.size < lastFilterTotalCount) {
+                    const ok = confirm(
+                        '当前勾选 ' + selectedOrderPendingIds.size + ' 单，筛选共 '
+                        + lastFilterTotalCount + ' 单。\n\n'
+                        + '确定只导出勾选的订单？\n'
+                        + '若要导出全部筛选结果，请先取消勾选再点「导出」。'
+                    );
+                    if (!ok) return;
+                }
+                const { isIdcard, headers, rows } = buildOrderExportRows(selectedOrderPendingIds);
                 if (!rows.length) {
-                    alert(hasSelection ? '所选订单无有效数据' : '当前筛选结果无有效数据可导出');
+                    alert('所选订单无有效数据');
                     return;
                 }
-                warnIfExportIncomplete(rows.length);
                 const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
                 downloadExcel((isIdcard ? '订单审核_身份证_' : '订单审核_手机号_') + stamp + '.xls', headers, rows);
-            };
-            if (hasFilter) {
-                const loading = document.getElementById('loading');
-                if (loading) loading.style.display = 'block';
-                fetchOrderAuditListForExport(filters)
-                    .then(data => {
-                        if (loading) loading.style.display = 'none';
-                        if (!data || data.code !== 0) {
-                            alert('导出失败：' + (data && data.msg ? data.msg : '未知错误'));
-                            return;
-                        }
-                        let orders = data.data || [];
-                        if (hasSelection) {
-                            const selected = selectedOrderPendingIds;
-                            orders = orders.filter(o => selected.has(o.pending_id || o.pendingId || ''));
-                        }
-                        const built = buildOrderExportRowsFromApi(orders);
-                        finishExport(built.headers, built.rows, built.isIdcard);
-                    })
-                    .catch(err => {
-                        const loading = document.getElementById('loading');
-                        if (loading) loading.style.display = 'none';
-                        alert('导出失败：' + err.message);
-                    });
                 return;
             }
-            const { isIdcard, headers, rows } = buildOrderExportRows(selectedOrderPendingIds);
-            finishExport(headers, rows, isIdcard);
+            // 无勾选：按当前筛选（含 Tab）全量导出
+            if (!hasFilter) {
+                alert('请先设置筛选条件，或切换到订单审核 Tab 后导出当前筛选结果');
+                return;
+            }
+            const loading = document.getElementById('loading');
+            if (loading) loading.style.display = 'block';
+            fetchOrderAuditListForExport(filters)
+                .then(data => {
+                    if (loading) loading.style.display = 'none';
+                    if (!data || data.code !== 0) {
+                        alert('导出失败：' + (data && data.msg ? data.msg : '未知错误'));
+                        return;
+                    }
+                    const orders = data.data || [];
+                    const built = buildOrderExportRowsFromApi(orders);
+                    if (!built.rows.length) {
+                        alert('当前筛选结果无有效数据可导出');
+                        return;
+                    }
+                    warnIfExportIncomplete(built.rows.length);
+                    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+                    downloadExcel((built.isIdcard ? '订单审核_身份证_' : '订单审核_手机号_') + stamp + '.xls', built.headers, built.rows);
+                })
+                .catch(err => {
+                    const loading = document.getElementById('loading');
+                    if (loading) loading.style.display = 'none';
+                    alert('导出失败：' + err.message);
+                });
         }
         const MCP_AUDIT_GROUP_TOKEN_KEY = 'mcp_order_audit_group_token';
         /** 旧版统一 key，仅用于迁移到按 Tab 拆分后的存储 */
@@ -1455,6 +1610,370 @@
         // 库存信息模块已移除
 
         const MCP_AUDIT_VIEWED_KEY = 'mcp_order_audit_viewed_pending_ids';
+        const MCP_AUDIT_TIMEOUT_NOTIFIED_KEY = 'mcp_order_audit_timeout_notified';
+        const MCP_AUDIT_TIMEOUT_MINUTES_KEY = 'mcp_order_audit_pending_timeout_minutes';
+        const MCP_AUDIT_TIMEOUT_MINUTES_MIN = 1;
+        const MCP_AUDIT_TIMEOUT_MINUTES_MAX = 1440;
+        let orderTimeoutCheckTimer = null;
+        /** pendingId -> { pendingId, order, createMs }，合并为一个右下角可折叠面板，避免多卡片遮挡列表 */
+        const activeTimeoutReminders = new Map();
+        let timeoutPanelExpanded = false;
+
+        function getMcpOrderPendingTimeoutDefaultMinutes() {
+            const el = document.getElementById('mcp-order-audit-sound-config');
+            const mins = el ? parseInt(el.getAttribute('data-pending-timeout-minutes') || '10', 10) : 10;
+            if (isNaN(mins)) return 10;
+            return Math.max(MCP_AUDIT_TIMEOUT_MINUTES_MIN, mins);
+        }
+
+        function clampPendingTimeoutMinutes(mins) {
+            const n = parseInt(mins, 10);
+            if (isNaN(n)) return getMcpOrderPendingTimeoutDefaultMinutes();
+            return Math.min(MCP_AUDIT_TIMEOUT_MINUTES_MAX, Math.max(MCP_AUDIT_TIMEOUT_MINUTES_MIN, n));
+        }
+
+        function getMcpOrderPendingTimeoutMinutes() {
+            try {
+                const raw = localStorage.getItem(MCP_AUDIT_TIMEOUT_MINUTES_KEY);
+                if (raw != null && String(raw).trim() !== '') {
+                    return clampPendingTimeoutMinutes(raw);
+                }
+            } catch (e) { /* ignore */ }
+            return getMcpOrderPendingTimeoutDefaultMinutes();
+        }
+
+        function getMcpOrderPendingTimeoutMs() {
+            return getMcpOrderPendingTimeoutMinutes() * 60 * 1000;
+        }
+
+        function updatePendingTimeoutSettingsHint() {
+            const hint = document.getElementById('cfgPendingTimeoutHint');
+            if (!hint) return;
+            const current = getMcpOrderPendingTimeoutMinutes();
+            const def = getMcpOrderPendingTimeoutDefaultMinutes();
+            let custom = false;
+            try {
+                custom = localStorage.getItem(MCP_AUDIT_TIMEOUT_MINUTES_KEY) != null;
+            } catch (e) { /* ignore */ }
+            hint.textContent = custom
+                ? ('当前生效 ' + current + ' 分钟（已自定义，系统默认 ' + def + ' 分钟）')
+                : ('当前生效 ' + current + ' 分钟（系统默认）');
+        }
+
+        function initPendingTimeoutSettingsUi() {
+            const inp = document.getElementById('cfgPendingTimeoutMinutes');
+            if (inp) {
+                inp.value = getMcpOrderPendingTimeoutMinutes();
+                inp.addEventListener('keydown', function (ev) {
+                    if (ev.key === 'Enter') {
+                        ev.preventDefault();
+                        applyPendingTimeoutSettings();
+                    }
+                });
+            }
+            updatePendingTimeoutSettingsHint();
+        }
+
+        function applyPendingTimeoutSettings() {
+            const inp = document.getElementById('cfgPendingTimeoutMinutes');
+            if (!inp) return;
+            const mins = clampPendingTimeoutMinutes(inp.value);
+            inp.value = mins;
+            try {
+                localStorage.setItem(MCP_AUDIT_TIMEOUT_MINUTES_KEY, String(mins));
+            } catch (e) {
+                alert('保存失败：' + (e.message || '浏览器可能禁用了本地存储'));
+                return;
+            }
+            sessionStorage.removeItem(MCP_AUDIT_TIMEOUT_NOTIFIED_KEY);
+            updatePendingTimeoutSettingsHint();
+            startPendingOrderTimeoutChecker();
+        }
+
+        function resetPendingTimeoutSettings() {
+            try {
+                localStorage.removeItem(MCP_AUDIT_TIMEOUT_MINUTES_KEY);
+            } catch (e) { /* ignore */ }
+            sessionStorage.removeItem(MCP_AUDIT_TIMEOUT_NOTIFIED_KEY);
+            const inp = document.getElementById('cfgPendingTimeoutMinutes');
+            if (inp) inp.value = getMcpOrderPendingTimeoutDefaultMinutes();
+            updatePendingTimeoutSettingsHint();
+            startPendingOrderTimeoutChecker();
+        }
+
+        function parseOrderCreateTimeMs(order) {
+            if (!order) return null;
+            const raw = order.create_time || order.createTime;
+            if (!raw) return null;
+            const s = String(raw).trim();
+            const t = Date.parse(s.includes('T') ? s : s.replace(' ', 'T'));
+            return isNaN(t) ? null : t;
+        }
+
+        function formatPendingWaitDuration(createMs) {
+            const mins = Math.max(0, Math.floor((Date.now() - createMs) / 60000));
+            if (mins < 60) return mins + ' 分钟';
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            return h + ' 小时' + (m ? (' ' + m + ' 分') : '');
+        }
+
+        function getTimeoutNotifiedMap() {
+            try {
+                const raw = sessionStorage.getItem(MCP_AUDIT_TIMEOUT_NOTIFIED_KEY);
+                if (!raw) return {};
+                const obj = JSON.parse(raw);
+                return obj && typeof obj === 'object' ? obj : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function markTimeoutNotified(pendingId) {
+            if (!pendingId) return;
+            const map = getTimeoutNotifiedMap();
+            map[pendingId] = Date.now();
+            sessionStorage.setItem(MCP_AUDIT_TIMEOUT_NOTIFIED_KEY, JSON.stringify(map));
+        }
+
+        function clearTimeoutNotified(pendingId) {
+            if (!pendingId) return;
+            const map = getTimeoutNotifiedMap();
+            if (!map[pendingId]) return;
+            delete map[pendingId];
+            sessionStorage.setItem(MCP_AUDIT_TIMEOUT_NOTIFIED_KEY, JSON.stringify(map));
+        }
+
+        function dismissTimeoutToastForPending(pendingId) {
+            if (!pendingId) return;
+            activeTimeoutReminders.delete(pendingId);
+            renderTimeoutReminderPanel();
+        }
+
+        function dismissAllTimeoutReminders(markNotified) {
+            if (markNotified) {
+                activeTimeoutReminders.forEach(function (_, pendingId) {
+                    markTimeoutNotified(pendingId);
+                });
+            }
+            activeTimeoutReminders.clear();
+            timeoutPanelExpanded = false;
+            renderTimeoutReminderPanel();
+        }
+
+        function isPendingOrderNeedTimeoutRemind(pendingId, order, createMs) {
+            if (!pendingId || !order || createMs == null) return false;
+            if (Number(order.audit_status) !== 0) return false;
+            const timeoutMs = getMcpOrderPendingTimeoutMs();
+            if (Date.now() - createMs < timeoutMs) return false;
+            if (activeTimeoutReminders.has(pendingId)) return false;
+            const lastNotified = getTimeoutNotifiedMap()[pendingId];
+            if (lastNotified && Date.now() - lastNotified < timeoutMs) return false;
+            return true;
+        }
+
+        function focusPendingOrderRow(pendingId) {
+            if (!pendingId) return;
+            const orderPane = document.getElementById('mcp-pane-order');
+            const idcardTab = document.getElementById('mcp-tab-order-idcard');
+            const phoneTab = document.getElementById('mcp-tab-order');
+            const od = orderDataMap.get(pendingId);
+            const isIdcard = od && od.order && String(od.order.request_trigger_type || '').toLowerCase() === 'idcard';
+            if (isIdcard && idcardTab && typeof bootstrap !== 'undefined') {
+                bootstrap.Tab.getOrCreateInstance(idcardTab).show();
+            } else if (phoneTab && typeof bootstrap !== 'undefined') {
+                bootstrap.Tab.getOrCreateInstance(phoneTab).show();
+            }
+            setTimeout(function () {
+                const row = document.querySelector('tr[data-pending-id="' + pendingId + '"]');
+                if (row) {
+                    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    row.classList.add('mcp-timeout-highlight');
+                    setTimeout(function () { row.classList.remove('mcp-timeout-highlight'); }, 2600);
+                }
+            }, isIdcard && orderPane ? 120 : 0);
+        }
+
+        function handlePendingOrderTimeoutAction(pendingId) {
+            dismissTimeoutToastForPending(pendingId);
+            clearTimeoutNotified(pendingId);
+            focusPendingOrderRow(pendingId);
+            const od = orderDataMap.get(pendingId);
+            if (od && Number(od.order.audit_status) === 0) {
+                setTimeout(function () { openEditModal(pendingId); }, 280);
+            }
+        }
+
+        function buildTimeoutReminderItemHtml(item) {
+            const pendingId = item.pendingId;
+            const order = item.order || {};
+            const createMs = item.createMs;
+            const timeoutMins = Math.round(getMcpOrderPendingTimeoutMs() / 60000);
+            const patientName = escapeHtml(order.patient_name || order.patientName || '-');
+            const patientPhone = escapeHtml(order.patient_phone || order.patientPhone || '-');
+            const patientIdCard = escapeHtml(order.patient_id_card || order.patientIdCard || '');
+            const contact = (String(order.request_trigger_type || '').toLowerCase() === 'idcard' || currentOrderTriggerType === 'idcard') && patientIdCard
+                ? patientIdCard
+                : patientPhone;
+            const waitText = formatPendingWaitDuration(createMs);
+            const storeDisplay = escapeHtml(resolveOrderStoreDisplay(order) || '-');
+            return '<div class="mcp-timeout-toast" data-pending-id="' + escapeHtml(pendingId) + '">' +
+                '<div class="mcp-timeout-toast-body">订单 <strong>' + escapeHtml(pendingId) + '</strong> 已超过 ' + timeoutMins + ' 分钟未处理。</div>' +
+                '<div class="mcp-timeout-toast-meta">' + patientName + '（' + contact + '）· 已等待 ' + waitText + '</div>' +
+                '<div class="mcp-timeout-toast-meta mcp-timeout-toast-store">门店号：' + storeDisplay + '</div>' +
+                '<div class="mcp-timeout-toast-actions">' +
+                    '<button type="button" class="btn btn-sm btn-outline-secondary mcp-timeout-later">稍后</button>' +
+                    '<button type="button" class="btn btn-sm btn-danger mcp-timeout-go">去处理</button>' +
+                '</div></div>';
+        }
+
+        function renderTimeoutReminderPanel() {
+            const stack = document.getElementById('mcpOrderTimeoutToastStack');
+            if (!stack) return;
+            if (activeTimeoutReminders.size === 0) {
+                stack.innerHTML = '';
+                return;
+            }
+            const items = Array.from(activeTimeoutReminders.values()).sort(function (a, b) {
+                return (a.createMs || 0) - (b.createMs || 0);
+            });
+            const count = items.length;
+            const expanded = timeoutPanelExpanded;
+            let listHtml = '';
+            items.forEach(function (item) {
+                listHtml += buildTimeoutReminderItemHtml(item);
+            });
+            stack.innerHTML =
+                '<div class="mcp-timeout-panel ' + (expanded ? 'expanded' : 'collapsed') + '">' +
+                    '<div class="mcp-timeout-panel-bar" role="button" tabindex="0" title="点击展开/收起明细">' +
+                        '<span class="mcp-timeout-panel-count">' + count + '</span>' +
+                        '<span class="mcp-timeout-panel-title">待处理订单超时提醒</span>' +
+                        '<span class="mcp-timeout-panel-toggle">' + (expanded ? '收起 ▲' : '展开查看 ▼') + '</span>' +
+                    '</div>' +
+                    (expanded
+                        ? ('<div class="mcp-timeout-panel-body">' + listHtml + '</div>' +
+                           '<div class="mcp-timeout-panel-footer">' +
+                               '<button type="button" class="btn btn-sm btn-outline-secondary mcp-timeout-later-all">全部稍后</button>' +
+                           '</div>')
+                        : '') +
+                '</div>';
+            const bar = stack.querySelector('.mcp-timeout-panel-bar');
+            if (bar) {
+                bar.addEventListener('click', function () {
+                    timeoutPanelExpanded = !timeoutPanelExpanded;
+                    renderTimeoutReminderPanel();
+                });
+                bar.addEventListener('keydown', function (ev) {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                        ev.preventDefault();
+                        timeoutPanelExpanded = !timeoutPanelExpanded;
+                        renderTimeoutReminderPanel();
+                    }
+                });
+            }
+            const laterAll = stack.querySelector('.mcp-timeout-later-all');
+            if (laterAll) {
+                laterAll.addEventListener('click', function () {
+                    dismissAllTimeoutReminders(true);
+                });
+            }
+            stack.querySelectorAll('.mcp-timeout-toast').forEach(function (toast) {
+                const pendingId = toast.getAttribute('data-pending-id');
+                const laterBtn = toast.querySelector('.mcp-timeout-later');
+                const goBtn = toast.querySelector('.mcp-timeout-go');
+                if (laterBtn) {
+                    laterBtn.addEventListener('click', function () {
+                        dismissTimeoutToastForPending(pendingId);
+                        markTimeoutNotified(pendingId);
+                    });
+                }
+                if (goBtn) {
+                    goBtn.addEventListener('click', function () {
+                        handlePendingOrderTimeoutAction(pendingId);
+                    });
+                }
+            });
+        }
+
+        function showPendingOrderTimeoutToast(pendingId, order, createMs) {
+            if (activeTimeoutReminders.has(pendingId)) return;
+            const wasEmpty = activeTimeoutReminders.size === 0;
+            activeTimeoutReminders.set(pendingId, {
+                pendingId: pendingId,
+                order: order,
+                createMs: createMs
+            });
+            // 新提醒默认收起，只占一条提示条，避免挡住订单列表；需要时再展开明细
+            if (wasEmpty) {
+                timeoutPanelExpanded = false;
+            }
+            renderTimeoutReminderPanel();
+            try {
+                playMcpOrderNotifySound('merged');
+            } catch (e) { /* ignore */ }
+        }
+
+        function scanPendingOrderTimeouts() {
+            if (!orderDataMap || orderDataMap.size === 0) {
+                if (activeTimeoutReminders.size) {
+                    activeTimeoutReminders.clear();
+                    renderTimeoutReminderPanel();
+                }
+                return;
+            }
+            let changed = false;
+            let added = 0;
+            activeTimeoutReminders.forEach(function (_, pendingId) {
+                const od = orderDataMap.get(pendingId);
+                if (!od || !od.order || Number(od.order.audit_status) !== 0) {
+                    activeTimeoutReminders.delete(pendingId);
+                    clearTimeoutNotified(pendingId);
+                    changed = true;
+                }
+            });
+            orderDataMap.forEach(function (od, pendingId) {
+                if (!od || !od.order) return;
+                if (Number(od.order.audit_status) !== 0) {
+                    if (activeTimeoutReminders.delete(pendingId)) changed = true;
+                    clearTimeoutNotified(pendingId);
+                    return;
+                }
+                const createMs = parseOrderCreateTimeMs(od.order);
+                if (isPendingOrderNeedTimeoutRemind(pendingId, od.order, createMs)) {
+                    activeTimeoutReminders.set(pendingId, {
+                        pendingId: pendingId,
+                        order: od.order,
+                        createMs: createMs
+                    });
+                    markTimeoutNotified(pendingId);
+                    changed = true;
+                    added += 1;
+                }
+            });
+            if (changed) {
+                renderTimeoutReminderPanel();
+            }
+            if (added > 0) {
+                try {
+                    playMcpOrderNotifySound('merged');
+                } catch (e) { /* ignore */ }
+            }
+        }
+
+        function startPendingOrderTimeoutChecker() {
+            if (orderTimeoutCheckTimer) {
+                clearInterval(orderTimeoutCheckTimer);
+            }
+            scanPendingOrderTimeouts();
+            orderTimeoutCheckTimer = setInterval(scanPendingOrderTimeouts, 30000);
+        }
+
+        function stopPendingOrderTimeoutChecker() {
+            if (orderTimeoutCheckTimer) {
+                clearInterval(orderTimeoutCheckTimer);
+                orderTimeoutCheckTimer = null;
+            }
+        }
 
         function getViewedPendingIdSet() {
             try {
@@ -2146,6 +2665,8 @@
             const container = document.getElementById('orderList');
             if (!orders || orders.length === 0) {
                 container.innerHTML = '<tr><td colspan="16" class="text-center text-muted">暂无数据</td></tr>';
+                orderDataMap = new Map();
+                dismissAllTimeoutReminders(false);
                 return;
             }
 
@@ -2192,7 +2713,7 @@
                 const showDot = shouldShowNewOrderDot(pendingId, auditStatus);
                 const canStore = (currentOrderTriggerType === 'idcard') ? true : canEditOrderByGroupName(order.group_name || '');
                 const ro = canStore ? '' : ' readonly';
-                const storeDisplay = order.store_ids || (storeIdsFromGroupNameText(order.group_name || '').join(','));
+                const storeDisplay = resolveOrderStoreDisplay(order);
                 const y3ImageInfo = order.y3_image_info || '';
                 const y3Html = renderY3ImageInfo(y3ImageInfo);
                 const checked = selectedOrderPendingIds.has(pendingId) ? ' checked' : '';
@@ -2320,6 +2841,7 @@
             document.querySelectorAll('.drug-details').forEach(el => {
                 el.classList.remove('show');
             });
+            scanPendingOrderTimeouts();
         }
 
         function toggleDrugDetails(pendingId, linkElement) {
@@ -2612,6 +3134,7 @@
         }
 
         function openOrderDetailModal(pendingId) {
+            markPendingOrderViewed(pendingId);
             const alertEl = document.getElementById('orderDetailModalAlert');
             const bodyEl = document.getElementById('orderDetailModalBody');
             const titleEl = document.getElementById('orderDetailModalLabel');
@@ -3665,6 +4188,8 @@
             }
             Promise.allSettled([loadGroupTokenOptions()]).finally(() => loadOrders());
             connectMcpOrderAuditWebSocket();
+            initPendingTimeoutSettingsUi();
+            startPendingOrderTimeoutChecker();
             const tabShip = document.getElementById('mcp-tab-shipment');
             if (tabShip) {
                 tabShip.addEventListener('shown.bs.tab', function () {
