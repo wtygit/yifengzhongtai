@@ -20,6 +20,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -628,7 +633,9 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         mcpOrderAuditRealtimePublisher.publishMergedPendingOrder(
                                 hitPendingId, "structured",
                                 str(normalizedRequest.get("patientName")),
-                                str(normalizedRequest.get("patientPhone")));
+                                str(normalizedRequest.get("patientPhone")),
+                                str(normalizedRequest.get("patientIdCard")),
+                                str(normalizedRequest.get("requestTriggerType")));
                     }
                     result.put("code", 0);
                     result.put("msg", "ok");
@@ -1495,6 +1502,14 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                 || "mcp_order_audit_manual".equalsIgnoreCase(str(raw.get("orderCreateSource")))) {
             out.put("_manualAuditCreate", Boolean.TRUE);
         }
+        // 审核「下单」写入的操作账号，归一化时必须保留，否则列表读回会丢
+        String orderSubmitAccount = firstNonBlank(
+                blankToNull(str(raw.get("orderSubmitAccount"))),
+                blankToNull(getIgnoreCase(raw, "order_submit_account")),
+                blankToNull(getIgnoreCase(raw, "submitAccount")));
+        if (StringUtils.hasText(orderSubmitAccount)) {
+            out.put("orderSubmitAccount", orderSubmitAccount.trim());
+        }
         preserveMiniStatusCallbackFields(raw, out);
         return out;
     }
@@ -1618,6 +1633,13 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         }
         if (!StringUtils.hasText(str(normalized.get("deliveryTime")))) {
             normalized.put("deliveryTime", str(existingNorm.get("deliveryTime")));
+        }
+        // 下单账号只在审核「下单」时写入，编辑保存时务必保留
+        if (!StringUtils.hasText(str(normalized.get("orderSubmitAccount")))) {
+            String existingAccount = extractOrderSubmitAccount(existingNorm);
+            if (StringUtils.hasText(existingAccount)) {
+                normalized.put("orderSubmitAccount", existingAccount);
+            }
         }
         // 不在此合并 items：空数组可能表示用户有意清空药品，合并会误恢复旧明细
     }
@@ -1860,6 +1882,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                         pendingId, src,
                         str(normalized.get("patientName")),
                         str(normalized.get("patientPhone")),
+                        str(normalized.get("patientIdCard")),
+                        str(normalized.get("requestTriggerType")),
                         str(normalized.get("groupName")),
                         str(normalized.get("orderRemark")));
             }
@@ -2359,6 +2383,11 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
 
     @Override
     public Map<String, Object> approveOrder(String pendingId, String auditRemark) {
+        return approveOrder(pendingId, auditRemark, null);
+    }
+
+    @Override
+    public Map<String, Object> approveOrder(String pendingId, String auditRemark, String orderSubmitAccountHint) {
         Map<String, Object> result = new HashMap<>();
         if (!StringUtils.hasText(pendingId)) {
             result.put("code", 400);
@@ -2414,21 +2443,31 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             String gateGroup = extractGroupNameForStoreGate(request);
 
             String reqTrigger = str(request.get("requestTriggerType"));
+            String submitAccount = firstNonBlank(
+                    blankToNull(orderSubmitAccountHint),
+                    blankToNull(currentMcpOrderSubmitAccount()));
             // 身份证触发（私聊单）：不在本系统提交中台/不推小程序侧链路，仅本地标记为已完成（audit_status=3）
             if ("idcard".equalsIgnoreCase(reqTrigger)) {
                 java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
+                persistOrderSubmitAccount(pendingId, request, submitAccount);
                 haidianJdbcTemplate.update(
                         "UPDATE mcp_order_create_request_log SET audit_status = 3, audit_time = ?, audit_remark = ? WHERE pending_id = ?",
                         now, auditRemark, pendingId);
                 result.put("code", 0);
                 result.put("msg", "身份证私聊单已标记为已完成（未提交中台/小程序）");
-                result.put("data", Map.of("pendingId", pendingId, "auditStatus", 3, "idcardLocalComplete", true));
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("pendingId", pendingId);
+                data.put("auditStatus", 3);
+                data.put("idcardLocalComplete", true);
+                data.put("orderSubmitAccount", submitAccount != null ? submitAccount : "");
+                result.put("data", data);
                 return result;
             }
 
             Map<String, Object> submitResult = submitOrderToMiddlePlatform(pendingId, request);
             if (submitResult.get("code") instanceof Number && ((Number) submitResult.get("code")).intValue() == 0) {
                 java.sql.Timestamp now = new java.sql.Timestamp(System.currentTimeMillis());
+                persistOrderSubmitAccount(pendingId, request, submitAccount);
                 haidianJdbcTemplate.update(
                         "UPDATE mcp_order_create_request_log SET audit_status = 1, audit_time = ?, audit_remark = ? WHERE pending_id = ?",
                         now, auditRemark, pendingId);
@@ -2825,7 +2864,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                     Map<String, Object> orderItem = buildOrderAuditListHeader(row, patientNameValue, patientPhoneValue,
                             patientIdCardValue, patientEducation, reqGroupNameRaw, reqStoreIds, reqTriggerType,
                             reqOrderRemark, reqGroupNickname, reqDeliveryHospital, reqY3ImageInfo, manualAuditCreate,
-                            reqOrderBizType, reqOrderBizTypeLabel, reqDeliveryDate, reqDeliveryTime);
+                            reqOrderBizType, reqOrderBizTypeLabel, reqDeliveryDate, reqDeliveryTime,
+                            extractOrderSubmitAccount(requestData));
                     orderItem.put("items", buildOrderAuditDrugItems(requestData.get("items")));
                     putMiniStatusCallbackListFieldsLite(orderItem, requestData);
                     orderList.add(orderItem);
@@ -2955,7 +2995,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
             Map<String, Object> orderItem = buildOrderAuditListHeader(row, patientNameValue, patientPhoneValue,
                     patientIdCardValue, patientEducation, reqGroupNameRaw, reqStoreIds, reqTriggerType,
                     reqOrderRemark, reqGroupNickname, reqDeliveryHospital, reqY3ImageInfo, manualAuditCreate,
-                    reqOrderBizType, reqOrderBizTypeLabel, reqDeliveryDate, reqDeliveryTime);
+                    reqOrderBizType, reqOrderBizTypeLabel, reqDeliveryDate, reqDeliveryTime,
+                    extractOrderSubmitAccount(requestData));
             orderItem.put("items", buildOrderAuditDrugItems(requestData.get("items")));
             putMiniStatusCallbackListFields(orderItem, requestData);
 
@@ -2979,7 +3020,8 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
                                                           String reqDeliveryHospital, String reqY3ImageInfo,
                                                           boolean manualAuditCreate,
                                                           String reqOrderBizType, String reqOrderBizTypeLabel,
-                                                          String reqDeliveryDate, String reqDeliveryTime) {
+                                                          String reqDeliveryDate, String reqDeliveryTime,
+                                                          String orderSubmitAccount) {
         Map<String, Object> orderItem = new LinkedHashMap<>();
         orderItem.put("id", row.get("id"));
         orderItem.put("pending_id", row.get("pending_id"));
@@ -2989,6 +3031,7 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         orderItem.put("audit_time", row.get("audit_time"));
         orderItem.put("audit_remark", row.get("audit_remark"));
         orderItem.put("create_time", row.get("create_time"));
+        orderItem.put("order_submit_account", orderSubmitAccount != null ? orderSubmitAccount : "");
         orderItem.put("patient_name", patientNameValue);
         orderItem.put("patient_phone", patientPhoneValue);
         orderItem.put("patient_id_card", patientIdCardValue);
@@ -3006,6 +3049,114 @@ public class McpCoreQueryServiceImpl implements McpCoreQueryService {
         orderItem.put("delivery_date", reqDeliveryDate);
         orderItem.put("delivery_time", reqDeliveryTime);
         return orderItem;
+    }
+
+    /** 审核页点「下单」时的操作账号：门店为门店编号，管理员为登录用户名 */
+    private String currentMcpOrderSubmitAccount() {
+        try {
+            if (StpUtil.isLogin()) {
+                String storeId = currentMcpAuditStoreId();
+                if (StringUtils.hasText(storeId)) {
+                    return storeId.trim();
+                }
+                String loginId = StpUtil.getLoginIdAsString();
+                if (StringUtils.hasText(loginId)) {
+                    String id = loginId.trim();
+                    if (id.startsWith("store:")) {
+                        String sid = id.substring("store:".length()).trim();
+                        return StringUtils.hasText(sid) ? sid : id;
+                    }
+                    return id;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("从 Sa-Token 取下单账号失败: {}", e.getMessage());
+        }
+        // 兼容：过滤器阶段可能仅靠 HttpSession 放行，此处再从请求会话兜底
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attrs == null) {
+                return null;
+            }
+            HttpServletRequest req = attrs.getRequest();
+            HttpSession session = req.getSession(false);
+            if (session == null) {
+                return null;
+            }
+            Object sid = session.getAttribute("mcpAuditStoreId");
+            if (sid != null && StringUtils.hasText(String.valueOf(sid))) {
+                return String.valueOf(sid).trim();
+            }
+            Object loginId = session.getAttribute("loginId");
+            if (loginId != null && StringUtils.hasText(String.valueOf(loginId))) {
+                String id = String.valueOf(loginId).trim();
+                if (id.startsWith("store:")) {
+                    String s = id.substring("store:".length()).trim();
+                    return StringUtils.hasText(s) ? s : id;
+                }
+                return id;
+            }
+            Object loginFrom = session.getAttribute("loginFrom");
+            if (loginFrom != null && StringUtils.hasText(String.valueOf(loginFrom))) {
+                return String.valueOf(loginFrom).trim();
+            }
+        } catch (Exception e) {
+            log.debug("从 HttpSession 取下单账号失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private static String extractOrderSubmitAccount(Map<String, Object> requestData) {
+        if (requestData == null) {
+            return "";
+        }
+        String v = firstNonBlank(
+                blankToNull(str(requestData.get("orderSubmitAccount"))),
+                blankToNull(getIgnoreCase(requestData, "order_submit_account")),
+                blankToNull(getIgnoreCase(requestData, "submitAccount")));
+        return v != null ? v : "";
+    }
+
+    private void persistOrderSubmitAccount(String pendingId, Map<String, Object> request, String submitAccount) {
+        if (!StringUtils.hasText(pendingId) || request == null) {
+            return;
+        }
+        String account = StringUtils.hasText(submitAccount) ? submitAccount.trim() : currentMcpOrderSubmitAccount();
+        if (!StringUtils.hasText(account)) {
+            log.warn("下单账号为空，未写入 pendingId={}（请确认网页登录会话有效）", pendingId);
+            return;
+        }
+        try {
+            // 以库内原始 JSON 合并写入，避免归一化丢字段后覆盖其它扩展数据
+            List<Map<String, Object>> rows = haidianJdbcTemplate.queryForList(
+                    "SELECT user_request_data FROM mcp_order_create_request_log WHERE pending_id = ? LIMIT 1",
+                    pendingId);
+            Map<String, Object> toSave = new LinkedHashMap<>();
+            if (!rows.isEmpty() && rows.get(0).get("user_request_data") != null) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> raw = objectMapper.readValue(
+                            String.valueOf(rows.get(0).get("user_request_data")), Map.class);
+                    if (raw != null) {
+                        toSave.putAll(raw);
+                    }
+                } catch (Exception parseEx) {
+                    if (request != null) {
+                        toSave.putAll(request);
+                    }
+                }
+            } else if (request != null) {
+                toSave.putAll(request);
+            }
+            toSave.put("orderSubmitAccount", account);
+            String json = objectMapper.writeValueAsString(toSave);
+            int n = haidianJdbcTemplate.update(
+                    "UPDATE mcp_order_create_request_log SET user_request_data = ? WHERE pending_id = ?",
+                    json, pendingId);
+            log.info("写入下单账号 pendingId={}, account={}, rows={}", pendingId, account, n);
+        } catch (Exception e) {
+            log.warn("写入下单账号失败 pendingId={}, account={}", pendingId, account, e);
+        }
     }
 
     @SuppressWarnings("unchecked")

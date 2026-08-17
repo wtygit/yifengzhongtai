@@ -23,6 +23,13 @@ public class McpOrderAuditRealtimePublisher {
     public void publishNewPendingOrder(String pendingId, String requestSource,
                                        String patientName, String patientPhone,
                                        String groupName, String orderRemark) {
+        publishNewPendingOrder(pendingId, requestSource, patientName, patientPhone, null, null, groupName, orderRemark);
+    }
+
+    public void publishNewPendingOrder(String pendingId, String requestSource,
+                                       String patientName, String patientPhone, String patientIdCard,
+                                       String requestTriggerType,
+                                       String groupName, String orderRemark) {
         if (pendingId == null || pendingId.isEmpty()) {
             return;
         }
@@ -32,6 +39,8 @@ public class McpOrderAuditRealtimePublisher {
         payload.put("requestSource", requestSource != null ? requestSource : "");
         payload.put("patientName", patientName != null ? patientName : "");
         payload.put("patientPhone", patientPhone != null ? patientPhone : "");
+        payload.put("patientIdCard", patientIdCard != null ? patientIdCard : "");
+        payload.put("requestTriggerType", requestTriggerType != null ? requestTriggerType : "");
         payload.put("groupName", groupName != null ? groupName : "");
         payload.put("orderRemark", orderRemark != null ? orderRemark : "");
         payload.put("timestamp", System.currentTimeMillis());
@@ -44,6 +53,12 @@ public class McpOrderAuditRealtimePublisher {
 
     public void publishMergedPendingOrder(String pendingId, String requestSource,
                                           String patientName, String patientPhone) {
+        publishMergedPendingOrder(pendingId, requestSource, patientName, patientPhone, null, null);
+    }
+
+    public void publishMergedPendingOrder(String pendingId, String requestSource,
+                                          String patientName, String patientPhone, String patientIdCard,
+                                          String requestTriggerType) {
         if (pendingId == null || pendingId.isEmpty()) {
             return;
         }
@@ -53,6 +68,8 @@ public class McpOrderAuditRealtimePublisher {
         payload.put("requestSource", requestSource != null ? requestSource : "");
         payload.put("patientName", patientName != null ? patientName : "");
         payload.put("patientPhone", patientPhone != null ? patientPhone : "");
+        payload.put("patientIdCard", patientIdCard != null ? patientIdCard : "");
+        payload.put("requestTriggerType", requestTriggerType != null ? requestTriggerType : "");
         payload.put("timestamp", System.currentTimeMillis());
         try {
             messagingTemplate.convertAndSend(TOPIC_PENDING, payload);

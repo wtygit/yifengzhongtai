@@ -378,7 +378,7 @@
         }
     </style>
 </head>
-<body th:attr="data-mcp-audit-store-id=${mcpAuditStoreId},data-mcp-audit-admin-bypass=${mcpAuditAdminBypass}">
+<body th:attr="data-mcp-audit-store-id=${mcpAuditStoreId},data-mcp-audit-admin-bypass=${mcpAuditAdminBypass},data-mcp-login-user=${loginUser}">
     <div id="mcp-order-audit-sound-config" class="d-none"
          th:data-sound-new="${mcpOrderAuditSoundNew}"
          th:data-sound-merged="${mcpOrderAuditSoundMerged}"
@@ -560,7 +560,7 @@
                         <th style="width: 100px;">状态</th>
                         <th style="width: 120px;">患者姓名</th>
                         <th class="trigger-phone-only" style="width: 130px;">手机号</th>
-                        <th class="trigger-idcard-only" style="width: 180px;">身份证</th>
+                        <th class="trigger-idcard-only" style="width: 220px; min-width: 220px;">身份证</th>
                         <th class="trigger-phone-only" style="width: 120px;">群名称</th>
                         <th style="width: 100px;">门店</th>
                         <th style="width: 120px;">送货医院</th>
@@ -570,13 +570,14 @@
                         <th style="width: 100px;">群昵称</th>
                         <th style="width: 140px;">聊天截图</th>
                         <th style="width: 180px;">创建时间</th>
+                        <th style="width: 120px;" title="审核页点击「下单」时的登录账号（门店编号或管理员用户名）">下单账号</th>
                         <th style="width: 80px;">药品信息</th>
                         <th style="width: 200px;">操作</th>
                     </tr>
                 </thead>
                 <tbody id="orderList">
                     <tr>
-                        <td colspan="16" class="text-center text-muted">加载中...</td>
+                        <td colspan="17" class="text-center text-muted">加载中...</td>
                     </tr>
                 </tbody>
             </table>
@@ -879,7 +880,7 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-2">有新提交的 MCP 订单需要审核，列表已自动刷新。</p>
+                    <p class="mb-2" id="newOrderNotifyDesc">有新提交的 MCP 订单需要审核，列表已自动刷新。</p>
                     <div id="newOrderNotifyList" class="small text-muted"></div>
                 </div>
                 <div class="modal-footer">
@@ -896,7 +897,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-2">检测到短时间内同手机号重复提交，且与最近一条待审核订单的药品明细一致，已合并更新该订单。</p>
+                    <p class="mb-2" id="mergedOrderNotifyDesc">检测到短时间内同手机号重复提交，且与最近一条待审核订单的药品明细一致，已合并更新该订单。</p>
                     <div id="mergedOrderNotifyList" class="small text-muted"></div>
                 </div>
                 <div class="modal-footer">
@@ -990,6 +991,16 @@
         const BASE_URL = window.location.origin;
         const MCP_AUDIT_STORE_ID = (document.body.getAttribute('data-mcp-audit-store-id') || '').trim();
         const MCP_AUDIT_ADMIN_BYPASS = String(document.body.getAttribute('data-mcp-audit-admin-bypass') || '').toLowerCase() === 'true';
+        const MCP_LOGIN_USER = (document.body.getAttribute('data-mcp-login-user') || '').trim();
+        /** 审核下单时上报的操作账号：优先门店编号，否则登录用户名（去掉 store: 前缀） */
+        function currentOrderSubmitAccountForApi() {
+            if (MCP_AUDIT_STORE_ID) return MCP_AUDIT_STORE_ID;
+            if (!MCP_LOGIN_USER || MCP_LOGIN_USER === '未登录用户') return '';
+            if (MCP_LOGIN_USER.indexOf('store:') === 0) {
+                return MCP_LOGIN_USER.substring(6).trim();
+            }
+            return MCP_LOGIN_USER;
+        }
         let orderDataMap = new Map(); // 存储订单原始数据，用于保存修改
         let currentOrderTriggerType = 'phone'; // phone | idcard
         let selectedOrderPendingIds = new Set();
@@ -1454,16 +1465,17 @@
         function buildOrderExportRowsFromApi(orders) {
             const isIdcard = currentOrderTriggerType === 'idcard';
             const headers = isIdcard
-                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间']
-                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间'];
+                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间', '下单账号']
+                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间', '下单账号'];
             const rows = [];
             (orders || []).forEach(o => {
                 const pid = o.pending_id || o.pendingId || '';
                 if (!pid) return;
                 const statusText = formatOrderAuditStatusText(o.audit_status);
+                const submitAcc = o.order_submit_account || o.orderSubmitAccount || '';
                 rows.push(isIdcard
-                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]
-                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]);
+                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || ''), submitAcc]
+                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || ''), submitAcc]);
             });
             return { isIdcard, headers, rows };
         }
@@ -2071,17 +2083,18 @@
         function buildOrderExportRows(pendingIds) {
             const isIdcard = currentOrderTriggerType === 'idcard';
             const headers = isIdcard
-                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间']
-                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间'];
+                ? ['订单号', '状态', '患者姓名', '身份证号', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间', '下单账号']
+                : ['订单号', '状态', '患者姓名', '手机号', '群名称', '门店', '送货医院', '下单备注', '群昵称', '聊天截图', '创建时间', '下单账号'];
             const rows = [];
             pendingIds.forEach(pid => {
                 const od = orderDataMap.get(pid);
                 if (!od || !od.order) return;
                 const o = od.order;
                 const statusText = formatOrderAuditStatusText(o.audit_status);
+                const submitAcc = o.order_submit_account || '';
                 rows.push(isIdcard
-                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]
-                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || '')]);
+                    ? [pid, statusText, o.patient_name || '', o.patient_id_card || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || ''), submitAcc]
+                    : [pid, statusText, o.patient_name || '', o.patient_phone || '', o.group_name || '', o.store_ids || '', o.delivery_hospital || '', o.order_remark || '', o.user_group_nickname || '', o.y3_image_info || '', formatDateTime(o.create_time || ''), submitAcc]);
             });
             return { isIdcard, headers, rows };
         }
@@ -2113,7 +2126,7 @@
 
         function loadOrders() {
             document.getElementById('loading').style.display = 'block';
-            document.getElementById('orderList').innerHTML = '<tr><td colspan="16" class="text-center text-muted">加载中...</td></tr>';
+            document.getElementById('orderList').innerHTML = '<tr><td colspan="17" class="text-center text-muted">加载中...</td></tr>';
             const filters = getAuditFilters();
             localStorage.setItem(MCP_AUDIT_GROUP_TOKEN_KEY, filters.groupToken || '');
             localStorage.setItem(mcpAuditFiltersStorageKey(currentOrderTriggerType), JSON.stringify(filters));
@@ -2145,14 +2158,14 @@
                         renderOrders(data.data || []);
                     } else {
                         document.getElementById('orderList').innerHTML = 
-                            '<tr><td colspan="16" class="text-center text-danger">加载失败：' + (data?.msg || '未知错误') + '</td></tr>';
+                            '<tr><td colspan="17" class="text-center text-danger">加载失败：' + (data?.msg || '未知错误') + '</td></tr>';
                         updateFilterResultCount(0);
                     }
                 })
                 .catch(err => {
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('orderList').innerHTML = 
-                        '<tr><td colspan="16" class="text-center text-danger">加载失败：' + err.message + '</td></tr>';
+                        '<tr><td colspan="17" class="text-center text-danger">加载失败：' + err.message + '</td></tr>';
                     updateFilterResultCount(0);
                 });
         }
@@ -2606,6 +2619,7 @@
                 audit_time: order.audit_time || order.auditTime || null,
                 audit_remark: order.audit_remark || order.auditRemark || null,
                 create_time: order.create_time || order.createTime || '',
+                order_submit_account: order.order_submit_account || order.orderSubmitAccount || '',
                 patient_name: order.patient_name || order.patientName || '',
                 patient_phone: order.patient_phone || order.patientPhone || '',
                 patient_id_card: order.patient_id_card || order.patientIdCard || '',
@@ -2664,7 +2678,7 @@
         function renderOrders(orders) {
             const container = document.getElementById('orderList');
             if (!orders || orders.length === 0) {
-                container.innerHTML = '<tr><td colspan="16" class="text-center text-muted">暂无数据</td></tr>';
+                container.innerHTML = '<tr><td colspan="17" class="text-center text-muted">暂无数据</td></tr>';
                 orderDataMap = new Map();
                 dismissAllTimeoutReminders(false);
                 return;
@@ -2746,12 +2760,13 @@
                                    value="${escapeHtml(order.patient_phone)}" 
                                    placeholder="手机号"${ro}>
                         </td>
-                        <td class="trigger-idcard-only">
+                        <td class="trigger-idcard-only" style="min-width: 220px;">
                             <input type="text" class="editable-field" 
                                    data-field="patient_id_card" 
                                    data-pending-id="${pendingId}"
                                    value="${escapeHtml(order.patient_id_card)}" 
-                                   placeholder="身份证"${ro}>
+                                   placeholder="身份证"
+                                   style="min-width: 200px; width: 100%;"${ro}>
                         </td>
                         <td class="small text-break trigger-phone-only">${escapeHtml(order.group_name || '-')}</td>
                         <td class="small text-break">${escapeHtml(storeDisplay || '-')}</td>
@@ -2762,6 +2777,7 @@
                         <td class="small text-break">${escapeHtml(order.user_group_nickname || '-')}</td>
                         <td class="small text-break" title="${escapeHtml(order.y3_image_info || '')}">${y3Html || '-'}</td>
                         <td>${createTime}</td>
+                        <td class="small text-break" title="审核页点击下单时的登录账号">${escapeHtml(order.order_submit_account || '-')}</td>
                         <td style="position: relative; overflow: visible;">
                             ${drugs.length > 0 ? 
                                 `<a href="javascript:void(0)" class="expand-btn" data-pending-id="${pendingId}">查看(${drugs.length})</a>
@@ -3065,6 +3081,7 @@
             html += renderDetailReadonlyField('中台订单号', order.order_id, { col: 'col-md-6' });
             html += renderDetailReadonlyField('审核状态', formatOrderAuditStatusText(order.audit_status), { col: 'col-md-6' });
             html += renderDetailReadonlyField('创建时间', formatDateTime(order.create_time), { col: 'col-md-6' });
+            html += renderDetailReadonlyField('下单账号', order.order_submit_account || '-', { col: 'col-md-6' });
             html += renderDetailReadonlyField('手建订单', order.manual_audit_create ? '是' : '否', { col: 'col-md-6' });
             html += renderDetailReadonlyField('患者姓名', order.patient_name, { col: 'col-md-6' });
             html += renderDetailReadonlyField('手机号', order.patient_phone, { col: 'col-md-6' });
@@ -3310,10 +3327,12 @@
                 // 然后调用审核通过接口（下单）
                 return fetch(`${BASE_URL}/mcp/core_order_approve`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        pendingId: pendingId, 
-                        auditRemark: '页面下单' 
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        pendingId: pendingId,
+                        auditRemark: '页面下单',
+                        orderSubmitAccount: currentOrderSubmitAccountForApi()
                     })
                 });
             })
@@ -3611,8 +3630,13 @@
                 }
                 return fetch(`${BASE_URL}/mcp/core_order_approve`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pendingId: pendingId, auditRemark: '编辑保存并下单' })
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        pendingId: pendingId,
+                        auditRemark: '编辑保存并下单',
+                        orderSubmitAccount: currentOrderSubmitAccountForApi()
+                    })
                 });
             })
             .then(res => {
@@ -3810,6 +3834,29 @@
             el.className = 'badge ' + cls;
         }
 
+        function normalizeNotifyTriggerType(info) {
+            const t = String((info && info.requestTriggerType) || '').toLowerCase().trim();
+            if (t === 'idcard' || t === 'id_card' || t === 'id-card') return 'idcard';
+            if (t === 'phone' || t === 'mobile') return 'phone';
+            const idCard = String((info && info.patientIdCard) || '').trim();
+            const phone = String((info && info.patientPhone) || '').trim();
+            if (idCard && !phone) return 'idcard';
+            return 'phone';
+        }
+
+        function formatNotifyOrderContactLine(o, idx) {
+            const isIdcard = normalizeNotifyTriggerType(o) === 'idcard';
+            const name = escapeHtml(o.patientName || '-');
+            const contact = escapeHtml(isIdcard ? (o.patientIdCard || '-') : (o.patientPhone || '-'));
+            return (idx + 1) + '. ' + name + '（' + contact + '）';
+        }
+
+        function isViewingOrderTrigger(triggerType) {
+            const orderPane = document.getElementById('mcp-pane-order');
+            const onOrderPane = orderPane && orderPane.classList.contains('active');
+            return !!(onOrderPane && currentOrderTriggerType === triggerType);
+        }
+
         function renderNewOrderNotifyList() {
             const box = document.getElementById('newOrderNotifyList');
             if (!box) return;
@@ -3817,28 +3864,32 @@
                 box.innerHTML = '<span class="text-muted">暂无明细</span>';
                 return;
             }
-            const rows = pendingNotifyOrders.slice(0, 10).map((o, idx) => {
-                const name = escapeHtml(o.patientName || '-');
-                const phone = escapeHtml(o.patientPhone || '-');
-                return `${idx + 1}. ${name}（${phone}）`;
+            const rows = pendingNotifyOrders.slice(0, 10).map(function (o, idx) {
+                return formatNotifyOrderContactLine(o, idx);
             });
             box.innerHTML = rows.join('<hr class="my-2">');
         }
 
-        function markOrderTabAttentionIfNeeded() {
-            const orderPane = document.getElementById('mcp-pane-order');
-            if (orderPane && orderPane.classList.contains('active')) return;
-            ['mcp-tab-order', 'mcp-tab-order-idcard'].forEach(function (id) {
-                const btn = document.getElementById(id);
-                if (!btn || btn.querySelector('.mcp-tab-attention-dot')) return;
-                const dot = document.createElement('span');
-                dot.className = 'mcp-tab-attention-dot';
-                dot.title = '有新订单待审核';
-                btn.appendChild(dot);
-            });
+        function markOrderTabAttentionForTrigger(triggerType) {
+            if (isViewingOrderTrigger(triggerType)) return;
+            const tabId = triggerType === 'idcard' ? 'mcp-tab-order-idcard' : 'mcp-tab-order';
+            const btn = document.getElementById(tabId);
+            if (!btn || btn.querySelector('.mcp-tab-attention-dot')) return;
+            const dot = document.createElement('span');
+            dot.className = 'mcp-tab-attention-dot';
+            dot.title = triggerType === 'idcard' ? '有新身份证订单待审核' : '有新手机号订单待审核';
+            btn.appendChild(dot);
         }
 
-        function clearOrderTabAttention() {
+        function clearOrderTabAttention(triggerType) {
+            if (triggerType === 'idcard') {
+                document.querySelectorAll('#mcp-tab-order-idcard .mcp-tab-attention-dot').forEach(el => el.remove());
+                return;
+            }
+            if (triggerType === 'phone') {
+                document.querySelectorAll('#mcp-tab-order .mcp-tab-attention-dot').forEach(el => el.remove());
+                return;
+            }
             document.querySelectorAll('#mcp-tab-order .mcp-tab-attention-dot, #mcp-tab-order-idcard .mcp-tab-attention-dot').forEach(el => el.remove());
         }
 
@@ -3853,12 +3904,30 @@
         }
 
         function showNewOrderNotifyModal(orderInfo) {
+            const trigger = normalizeNotifyTriggerType(orderInfo);
+            markOrderTabAttentionForTrigger(trigger);
+            if (!isViewingOrderTrigger(trigger)) {
+                return false;
+            }
             try {
                 playMcpOrderNotifySound('new');
             } catch (e) {
                 console.warn('MCP 订单提示音', e);
             }
+            const titleEl = document.getElementById('newOrderNotifyLabel');
+            const descEl = document.getElementById('newOrderNotifyDesc');
+            if (titleEl) {
+                titleEl.textContent = trigger === 'idcard' ? '新身份证订单待审核' : '新手机号订单待审核';
+            }
+            if (descEl) {
+                descEl.textContent = trigger === 'idcard'
+                    ? '有新提交的身份证 MCP 订单需要审核，列表已自动刷新。'
+                    : '有新提交的手机号 MCP 订单需要审核，列表已自动刷新。';
+            }
             if (orderInfo && orderInfo.pendingId) {
+                pendingNotifyOrders = pendingNotifyOrders.filter(function (o) {
+                    return normalizeNotifyTriggerType(o) === trigger;
+                });
                 pendingNotifyOrders.unshift(orderInfo);
                 const seen = new Set();
                 pendingNotifyOrders = pendingNotifyOrders.filter(o => {
@@ -3878,12 +3947,13 @@
                     }, { once: true });
                     bootstrap.Modal.getOrCreateInstance(modalEl).show();
                 } else {
-                    alert('有新提交的 MCP 订单需要审核');
+                    alert(trigger === 'idcard' ? '有新提交的身份证订单需要审核' : '有新提交的手机号订单需要审核');
                 }
             } catch (e) {
                 console.warn('MCP 新订单弹窗失败', e);
-                alert('有新提交的 MCP 订单需要审核');
+                alert(trigger === 'idcard' ? '有新提交的身份证订单需要审核' : '有新提交的手机号订单需要审核');
             }
+            return true;
         }
 
         function renderMergedOrderNotifyList() {
@@ -3893,21 +3963,37 @@
                 box.innerHTML = '<span class="text-muted">暂无明细</span>';
                 return;
             }
-            const rows = pendingMergedNotifyOrders.slice(0, 10).map((o, idx) => {
-                const name = escapeHtml(o.patientName || '-');
-                const phone = escapeHtml(o.patientPhone || '-');
-                return `${idx + 1}. ${name}（${phone}）`;
+            const rows = pendingMergedNotifyOrders.slice(0, 10).map(function (o, idx) {
+                return formatNotifyOrderContactLine(o, idx);
             });
             box.innerHTML = rows.join('<hr class="my-2">');
         }
 
         function showMergedOrderNotifyModal(orderInfo) {
+            const trigger = normalizeNotifyTriggerType(orderInfo);
+            markOrderTabAttentionForTrigger(trigger);
+            if (!isViewingOrderTrigger(trigger)) {
+                return false;
+            }
             try {
                 playMcpOrderNotifySound('merged');
             } catch (e) {
                 console.warn('MCP 合并订单提示音', e);
             }
+            const titleEl = document.getElementById('mergedOrderNotifyLabel');
+            const descEl = document.getElementById('mergedOrderNotifyDesc');
+            if (titleEl) {
+                titleEl.textContent = trigger === 'idcard' ? '身份证订单重复提交已合并' : '手机号订单重复提交已合并';
+            }
+            if (descEl) {
+                descEl.textContent = trigger === 'idcard'
+                    ? '检测到短时间内同身份证重复提交，且与最近一条待审核订单的药品明细一致，已合并更新该订单。'
+                    : '检测到短时间内同手机号重复提交，且与最近一条待审核订单的药品明细一致，已合并更新该订单。';
+            }
             if (orderInfo && orderInfo.pendingId) {
+                pendingMergedNotifyOrders = pendingMergedNotifyOrders.filter(function (o) {
+                    return normalizeNotifyTriggerType(o) === trigger;
+                });
                 pendingMergedNotifyOrders.unshift(orderInfo);
                 const seen = new Set();
                 pendingMergedNotifyOrders = pendingMergedNotifyOrders.filter(o => {
@@ -3933,6 +4019,7 @@
                 console.warn('MCP 合并订单弹窗失败', e);
                 alert('重复提交已合并');
             }
+            return true;
         }
 
         function renderNewShipmentNotifyList() {
@@ -4062,42 +4149,52 @@
                         const body = JSON.parse(message.body);
                         if (body.type === 'NEW_PENDING_ORDER') {
                             setTimeout(function () {
+                                const orderInfo = {
+                                    pendingId: body.pendingId || '',
+                                    patientName: body.patientName || '',
+                                    patientPhone: body.patientPhone || '',
+                                    patientIdCard: body.patientIdCard || '',
+                                    requestTriggerType: body.requestTriggerType || '',
+                                    groupName: body.groupName || '',
+                                    orderRemark: body.orderRemark || '',
+                                    timestamp: body.timestamp || Date.now()
+                                };
+                                const trigger = normalizeNotifyTriggerType(orderInfo);
                                 try {
-                                    showNewOrderNotifyModal({
-                                        pendingId: body.pendingId || '',
-                                        patientName: body.patientName || '',
-                                        patientPhone: body.patientPhone || '',
-                                        groupName: body.groupName || '',
-                                        orderRemark: body.orderRemark || '',
-                                        timestamp: body.timestamp || Date.now()
-                                    });
+                                    showNewOrderNotifyModal(orderInfo);
                                 } catch (err) {
                                     console.warn('新订单弹窗处理异常', err);
                                 }
-                                markOrderTabAttentionIfNeeded();
-                                try {
-                                    loadOrders();
-                                } catch (err2) {
-                                    console.warn('loadOrders 异常', err2);
+                                if (currentOrderTriggerType === trigger) {
+                                    try {
+                                        loadOrders();
+                                    } catch (err2) {
+                                        console.warn('loadOrders 异常', err2);
+                                    }
                                 }
                             }, 0);
                         } else if (body.type === 'MERGED_PENDING_ORDER') {
                             setTimeout(function () {
+                                const orderInfo = {
+                                    pendingId: body.pendingId || '',
+                                    patientName: body.patientName || '',
+                                    patientPhone: body.patientPhone || '',
+                                    patientIdCard: body.patientIdCard || '',
+                                    requestTriggerType: body.requestTriggerType || '',
+                                    timestamp: body.timestamp || Date.now()
+                                };
+                                const trigger = normalizeNotifyTriggerType(orderInfo);
                                 try {
-                                    showMergedOrderNotifyModal({
-                                        pendingId: body.pendingId || '',
-                                        patientName: body.patientName || '',
-                                        patientPhone: body.patientPhone || '',
-                                        timestamp: body.timestamp || Date.now()
-                                    });
+                                    showMergedOrderNotifyModal(orderInfo);
                                 } catch (err) {
                                     console.warn('合并订单弹窗处理异常', err);
                                 }
-                                markOrderTabAttentionIfNeeded();
-                                try {
-                                    loadOrders();
-                                } catch (err2) {
-                                    console.warn('loadOrders 异常', err2);
+                                if (currentOrderTriggerType === trigger) {
+                                    try {
+                                        loadOrders();
+                                    } catch (err2) {
+                                        console.warn('loadOrders 异常', err2);
+                                    }
                                 }
                             }, 0);
                         } else if (body.type === 'NEW_SHIPMENT') {
@@ -4166,13 +4263,13 @@
             if (tabOrderPhone) {
                 tabOrderPhone.addEventListener('shown.bs.tab', function () {
                     setOrderTriggerType('phone', true);
-                    clearOrderTabAttention();
+                    clearOrderTabAttention('phone');
                 });
             }
             if (tabOrderIdCard) {
                 tabOrderIdCard.addEventListener('shown.bs.tab', function () {
                     setOrderTriggerType('idcard', true);
-                    clearOrderTabAttention();
+                    clearOrderTabAttention('idcard');
                 });
             }
             applyOrderTriggerVisibility();
@@ -4201,13 +4298,13 @@
             if (tabOrder) {
                 tabOrder.addEventListener('shown.bs.tab', function () {
                     stopShipmentPolling();
-                    clearOrderTabAttention();
+                    clearOrderTabAttention('phone');
                 });
             }
             if (tabOrderIdCard) {
                 tabOrderIdCard.addEventListener('shown.bs.tab', function () {
                     stopShipmentPolling();
-                    clearOrderTabAttention();
+                    clearOrderTabAttention('idcard');
                 });
             }
         };

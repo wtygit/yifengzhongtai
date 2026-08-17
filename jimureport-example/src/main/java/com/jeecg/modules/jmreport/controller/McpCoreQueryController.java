@@ -280,8 +280,9 @@ public class McpCoreQueryController {
     public Map<String, Object> coreOrderApprove(@RequestBody CoreOrderAuditRequest request) {
         String pendingId = request != null ? request.getPendingId() : null;
         String auditRemark = request != null ? request.getAuditRemark() : null;
-        log.info("MCP core_order_approve 请求，pendingId={}", pendingId);
-        return mcpCoreQueryService.approveOrder(pendingId, auditRemark);
+        String orderSubmitAccount = request != null ? request.getOrderSubmitAccount() : null;
+        log.info("MCP core_order_approve 请求，pendingId={}, orderSubmitAccount={}", pendingId, orderSubmitAccount);
+        return mcpCoreQueryService.approveOrder(pendingId, auditRemark, orderSubmitAccount);
     }
 
     /**
@@ -758,6 +759,11 @@ public class McpCoreQueryController {
          * 审核备注（通过时可选，驳回时必填）
          */
         private String auditRemark;
+        /**
+         * 下单账号（审核页传入当前登录门店编号或管理员用户名，作会话读取失败时的兜底）
+         */
+        @JsonAlias({"order_submit_account", "submitAccount"})
+        private String orderSubmitAccount;
     }
 
     /**

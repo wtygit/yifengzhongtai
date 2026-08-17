@@ -116,6 +116,9 @@ public interface McpCoreQueryService {
      */
     Map<String, Object> approveOrder(String pendingId, String auditRemark);
 
+    /** 审核下单；orderSubmitAccountHint 可由前端传入当前登录账号（门店编号/用户名）作兜底 */
+    Map<String, Object> approveOrder(String pendingId, String auditRemark, String orderSubmitAccountHint);
+
     /**
      * 审核驳回：更新表A状态为已驳回
      *
